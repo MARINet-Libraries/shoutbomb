@@ -107,6 +107,12 @@ Generate all reports with headers:
 ./generate-reports.sh
 ```
 
+Generate only selected reports with headers:
+
+```bash
+./generate-reports.sh --reports holds renew
+```
+
 Generate all reports without headers:
 
 ```bash
@@ -118,6 +124,14 @@ Upload the latest supported report files:
 ```bash
 ./upload.sh
 ```
+
+Upload only selected supported reports:
+
+```bash
+./upload.sh --reports holds overdue
+```
+
+Report selections must use basenames such as `holds`, not filenames such as `holds.sql`.
 
 Show help:
 
@@ -134,14 +148,17 @@ It:
 
 - loads PostgreSQL connection settings from `.env`
 - discovers every `*.sql` file in `sql/`
+- runs every discovered report by default
+- supports `--reports REPORT [REPORT ...]` to limit the run to selected report basenames
+- validates `--reports` names against discovered SQL basenames and fails the full run if any requested name is invalid
 - runs each query with `psql`
 - writes CSV output into `data/`
 - uses a single shared epoch timestamp for the whole run
 - names output files as `<report-name>-<epoch>.csv`
 - includes headers by default
 - supports `--no-headers` to omit headers
-- continues processing remaining reports if one report fails
-- exits non-zero if any report fails
+- continues processing remaining selected reports if one report fails
+- exits non-zero if any selected report fails
 - deletes partial output files for failed reports
 
 Example output filenames:
@@ -164,13 +181,16 @@ data/renew-1713965123.csv
 It:
 
 - loads SSH/SFTP settings from `.env`
+- uploads every supported report by default
+- supports `--reports REPORT [REPORT ...]` to limit the run to selected supported report basenames
+- validates `--reports` names against the supported upload mapping and fails the full run if any requested name is invalid
 - looks in `data/` for files matching `<report-name>-<epoch>.csv`
-- selects the latest file for each supported report by filename epoch
+- selects the latest file for each selected supported report by filename epoch
 - uploads each selected file with its own SFTP invocation
 - uploads each selected file to its existing destination directory on the remote server
 - assumes the destination directories already exist
-- continues attempting remaining uploads if one report file is missing or one upload fails
-- exits non-zero if any required report file is missing or any upload fails
+- continues attempting remaining selected uploads if one report file is missing or one upload fails
+- exits non-zero if any selected report file is missing or any selected upload fails
 - always uses strict SSH host key checking
 
 For the filename-convention change that aligned report names with the destination directories, see `notes/report-filename-alignment.md`.
@@ -178,10 +198,11 @@ For the filename-convention change that aligned report names with the destinatio
 Optional upload flags:
 
 ```text
--h, --help         Show help
--H, --host HOST    SSH host override
--P, --port PORT    SSH port override
--v, --verbose      Verbose sftp output
+--reports REPORT [...]  Upload only selected supported report basenames
+-h, --help             Show help
+-H, --host HOST        SSH host override
+-P, --port PORT        SSH port override
+-v, --verbose          Verbose sftp output
 ```
 
 ## Current reports

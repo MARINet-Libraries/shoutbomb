@@ -4,17 +4,18 @@ set -o pipefail
 
 usage() {
   cat <<'EOF'
-Usage: ./generate-reports.sh [--headers|--no-headers] [--help]
+Usage: ./generate-reports.sh [--headers|--no-headers] [--reports REPORT [REPORT ...]] [--help]
 
-Runs every .sql file in ./sql using psql and writes CSV output to ./data.
+Runs every .sql file in ./sql by default using psql and writes CSV output to ./data.
 The script loads PostgreSQL connection details from ./.env in the project root.
 The .env file must define: PGHOST, PGPORT, PGDATABASE, PGUSER, and PGPASSWORD.
 Output filenames use the pattern <report-name>-<epoch-seconds>.csv.
 
 Options:
-  --headers     Include CSV headers (default)
-  --no-headers  Omit CSV headers
-  -h, --help    Show this help text
+  --headers                  Include CSV headers (default)
+  --no-headers               Omit CSV headers
+  --reports REPORT [...]     Run only the selected report basenames
+  -h, --help                 Show this help text
 EOF
 }
 
@@ -81,15 +82,75 @@ EOF
   fi
 }
 
+array_contains() {
+  local needle="$1"
+  shift
+  local value
+
+  for value in "$@"; do
+    if [[ "$value" == "$needle" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+print_valid_reports() {
+  local report_name
+
+  echo "Valid reports:" >&2
+  for report_name in "${available_report_names[@]}"; do
+    printf '  %s\n' "$report_name" >&2
+  done
+}
+
+validate_requested_reports() {
+  local invalid_reports=()
+  local report_name
+
+  for report_name in "${requested_reports[@]}"; do
+    if ! array_contains "$report_name" "${available_report_names[@]}"; then
+      invalid_reports+=("$report_name")
+    fi
+  done
+
+  if [[ ${#invalid_reports[@]} -ne 0 ]]; then
+    echo "Error: Invalid report name(s) for --reports:" >&2
+    printf '  %s\n' "${invalid_reports[@]}" >&2
+    echo "Report names must be basenames such as holds, not filenames such as holds.sql." >&2
+    print_valid_reports
+    return 1
+  fi
+}
+
 include_headers=1
+requested_reports=()
+available_report_names=()
+selected_sql_files=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --headers)
       include_headers=1
+      shift
       ;;
     --no-headers)
       include_headers=0
+      shift
+      ;;
+    --reports)
+      shift
+      if [[ $# -eq 0 || "$1" == -* ]]; then
+        echo "Error: Option --reports requires at least one report name." >&2
+        usage >&2
+        exit 2
+      fi
+
+      while [[ $# -gt 0 && "$1" != -* ]]; do
+        requested_reports+=("$1")
+        shift
+      done
       ;;
     -h|--help)
       usage
@@ -101,11 +162,46 @@ while [[ $# -gt 0 ]]; do
       exit 2
       ;;
   esac
-  shift
 done
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 env_file="$script_dir/.env"
+sql_dir="$script_dir/sql"
+data_dir="$script_dir/data"
+
+[[ -d "$sql_dir" ]] || {
+  echo "Error: SQL directory not found: $sql_dir" >&2
+  exit 1
+}
+
+shopt -s nullglob
+sql_files=("$sql_dir"/*.sql)
+shopt -u nullglob
+
+if [[ ${#sql_files[@]} -eq 0 ]]; then
+  echo "Error: No .sql files found in $sql_dir" >&2
+  exit 1
+fi
+
+for sql_file in "${sql_files[@]}"; do
+  available_report_names+=("$(basename "$sql_file" .sql)")
+done
+
+if [[ ${#requested_reports[@]} -eq 0 ]]; then
+  selected_sql_files=("${sql_files[@]}")
+else
+  if ! validate_requested_reports; then
+    exit 1
+  fi
+
+  for sql_file in "${sql_files[@]}"; do
+    report_name="$(basename "$sql_file" .sql)"
+
+    if array_contains "$report_name" "${requested_reports[@]}"; then
+      selected_sql_files+=("$sql_file")
+    fi
+  done
+fi
 
 if ! command -v psql >/dev/null 2>&1; then
   echo "Error: psql was not found on PATH." >&2
@@ -120,24 +216,7 @@ if ! check_pg_env "$env_file"; then
   exit 1
 fi
 
-sql_dir="$script_dir/sql"
-data_dir="$script_dir/data"
-
-[[ -d "$sql_dir" ]] || {
-  echo "Error: SQL directory not found: $sql_dir" >&2
-  exit 1
-}
-
 mkdir -p "$data_dir"
-
-shopt -s nullglob
-sql_files=("$sql_dir"/*.sql)
-shopt -u nullglob
-
-if [[ ${#sql_files[@]} -eq 0 ]]; then
-  echo "Error: No .sql files found in $sql_dir" >&2
-  exit 1
-fi
 
 timestamp="$(date +%s)"
 psql_args=(
@@ -153,7 +232,7 @@ fi
 
 had_failure=0
 
-for sql_file in "${sql_files[@]}"; do
+for sql_file in "${selected_sql_files[@]}"; do
   report_name="$(basename "$sql_file" .sql)"
   output_file="$data_dir/${report_name}-${timestamp}.csv"
 

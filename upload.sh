@@ -4,9 +4,9 @@ set -o pipefail
 
 usage() {
   cat <<'EOF'
-Usage: ./upload.sh [--help] [-H HOST] [-P PORT] [-v]
+Usage: ./upload.sh [--reports REPORT [REPORT ...]] [--help] [-H HOST] [-P PORT] [-v]
 
-Uploads the latest generated CSV for each supported report in ./data:
+Uploads the latest generated CSV for each supported report in ./data by default:
   holds         -> /Holds
   renew         -> /Renew
   overdue       -> /Overdue
@@ -26,10 +26,11 @@ Optional .env variables:
   SSH_KNOWN_HOSTS_FILE  Absolute path to known_hosts override
 
 Options:
-  -h, --help         Show this help text
-  -H, --host HOST    SSH host override
-  -P, --port PORT    SSH port override
-  -v, --verbose      Verbose sftp output
+  --reports REPORT [...]  Upload only the selected supported report basenames
+  -h, --help             Show this help text
+  -H, --host HOST        SSH host override
+  -P, --port PORT        SSH port override
+  -v, --verbose          Verbose sftp output
 EOF
 }
 
@@ -217,12 +218,81 @@ upload_file() {
     "$(sftp_quote "$remote_file")" | sftp "${sftp_args[@]}" "$target"
 }
 
+array_contains() {
+  local needle="$1"
+  shift
+  local value
+
+  for value in "$@"; do
+    if [[ "$value" == "$needle" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+print_valid_reports() {
+  local report_name
+
+  echo "Valid reports:" >&2
+  for report_name in "${supported_report_names[@]}"; do
+    printf '  %s\n' "$report_name" >&2
+  done
+}
+
+validate_requested_reports() {
+  local invalid_reports=()
+  local report_name
+
+  for report_name in "${requested_reports[@]}"; do
+    if ! array_contains "$report_name" "${supported_report_names[@]}"; then
+      invalid_reports+=("$report_name")
+    fi
+  done
+
+  if [[ ${#invalid_reports[@]} -ne 0 ]]; then
+    echo "Error: Invalid report name(s) for --reports:" >&2
+    printf '  %s\n' "${invalid_reports[@]}" >&2
+    echo "Report names must be basenames such as holds, not filenames such as holds.sql." >&2
+    print_valid_reports
+    return 1
+  fi
+}
+
+reports=(
+  "holds:/Holds"
+  "renew:/Renew"
+  "overdue:/Overdue"
+  "text-patrons:/text_patrons"
+)
+requested_reports=()
+supported_report_names=()
+selected_reports=()
+
+for report in "${reports[@]}"; do
+  supported_report_names+=("${report%%:*}")
+done
+
 HOST=""
 PORT=""
 VERBOSE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --reports)
+      shift
+      if [[ $# -eq 0 || "$1" == -* ]]; then
+        echo "Error: Option --reports requires at least one report name." >&2
+        usage >&2
+        exit 1
+      fi
+
+      while [[ $# -gt 0 && "$1" != -* ]]; do
+        requested_reports+=("$1")
+        shift
+      done
+      ;;
     -h|--help)
       usage
       exit 0
@@ -253,7 +323,7 @@ while [[ $# -gt 0 ]]; do
       shift
       break
       ;;
-    -*)
+    -* )
       echo "Error: Invalid option: $1" >&2
       usage >&2
       exit 1
@@ -270,6 +340,22 @@ if [[ $# -gt 0 ]]; then
   echo "Error: Unexpected arguments: $*" >&2
   usage >&2
   exit 1
+fi
+
+if [[ ${#requested_reports[@]} -eq 0 ]]; then
+  selected_reports=("${reports[@]}")
+else
+  if ! validate_requested_reports; then
+    exit 1
+  fi
+
+  for report in "${reports[@]}"; do
+    report_name="${report%%:*}"
+
+    if array_contains "$report_name" "${requested_reports[@]}"; then
+      selected_reports+=("$report")
+    fi
+  done
 fi
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -296,15 +382,9 @@ if ! check_port "$PORT"; then
   exit 1
 fi
 
-reports=(
-  "holds:/Holds"
-  "renew:/Renew"
-  "overdue:/Overdue"
-  "text-patrons:/text_patrons"
-)
 had_failure=0
 
-for report in "${reports[@]}"; do
+for report in "${selected_reports[@]}"; do
   report_name="${report%%:*}"
   remote_path="${report#*:}"
 
