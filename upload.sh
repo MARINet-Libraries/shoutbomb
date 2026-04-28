@@ -4,7 +4,7 @@ set -o pipefail
 
 usage() {
   cat <<'EOF'
-Usage: ./upload.sh [--help] [-h HOST] [-P PORT] [-v]
+Usage: ./upload.sh [--help] [-H HOST] [-P PORT] [-v]
 
 Uploads the latest generated CSV for each supported report in ./data:
   holds         -> /Holds
@@ -12,21 +12,24 @@ Uploads the latest generated CSV for each supported report in ./data:
   overdue       -> /Overdue
   text-patrons  -> /text_patrons
 
-The script loads FTPS settings from ./.env in the project root.
+The script loads SSH/SFTP settings from ./.env in the project root.
+Strict host key checking is always enabled.
+Remote destination directories must already exist.
 
 Required .env variables:
-  FTPS_USERNAME
-  FTPS_PASSWORD
+  SSH_USERNAME
+  SSH_IDENTITY_FILE     Absolute path to SSH private key
 
 Optional .env variables:
-  FTPS_HOST  FTPS host (default: ftp.shoutbomb.com)
-  FTPS_PORT  FTPS port (default: 990)
+  SSH_HOST              SSH host (default: ftp.shoutbomb.com)
+  SSH_PORT              SSH port (default: 22)
+  SSH_KNOWN_HOSTS_FILE  Absolute path to known_hosts override
 
 Options:
-  -h HOST    FTPS host override
-  -P PORT    FTPS port override
-  -v         Verbose curl output
-  --help     Show this help text
+  -h, --help         Show this help text
+  -H, --host HOST    SSH host override
+  -P, --port PORT    SSH port override
+  -v, --verbose      Verbose sftp output
 EOF
 }
 
@@ -38,11 +41,15 @@ load_env_file() {
     echo "Error: Environment file not found: $env_file" >&2
     cat >&2 <<'EOF'
 
-Create the file with FTPS settings, for example:
-  FTPS_HOST=ftp.shoutbomb.com
-  FTPS_PORT=990
-  FTPS_USERNAME=your_username
-  FTPS_PASSWORD=secret
+Create the file with SSH/SFTP settings, for example:
+  SSH_HOST=ftp.shoutbomb.com
+  SSH_PORT=22
+  SSH_USERNAME=your_username
+  SSH_IDENTITY_FILE=/full/path/to/private_key
+  # Optional:
+  # SSH_KNOWN_HOSTS_FILE=/full/path/to/known_hosts
+
+SSH_IDENTITY_FILE and SSH_KNOWN_HOSTS_FILE must use absolute paths.
 EOF
     return 1
   fi
@@ -64,9 +71,34 @@ EOF
   fi
 }
 
-check_ftps_env() {
+check_absolute_path() {
+  local description="$1"
+  local path_value="$2"
+
+  if [[ "$path_value" != /* ]]; then
+    echo "Error: $description must be an absolute path: $path_value" >&2
+    return 1
+  fi
+}
+
+check_readable_file() {
+  local description="$1"
+  local file_path="$2"
+
+  if [[ ! -f "$file_path" ]]; then
+    echo "Error: $description not found: $file_path" >&2
+    return 1
+  fi
+
+  if [[ ! -r "$file_path" ]]; then
+    echo "Error: $description is not readable: $file_path" >&2
+    return 1
+  fi
+}
+
+check_ssh_env() {
   local env_file="$1"
-  local required_vars=(FTPS_USERNAME FTPS_PASSWORD)
+  local required_vars=(SSH_USERNAME SSH_IDENTITY_FILE)
   local missing_vars=()
   local var
 
@@ -77,14 +109,41 @@ check_ftps_env() {
   done
 
   if [[ ${#missing_vars[@]} -ne 0 ]]; then
-    echo "Error: Missing required FTPS settings in $env_file:" >&2
+    echo "Error: Missing required SSH/SFTP settings in $env_file:" >&2
     printf '  %s\n' "${missing_vars[@]}" >&2
     cat >&2 <<'EOF'
 
 Update the file so it contains values for:
-  FTPS_USERNAME
-  FTPS_PASSWORD
+  SSH_USERNAME
+  SSH_IDENTITY_FILE
 EOF
+    return 1
+  fi
+
+  if ! check_absolute_path "SSH identity file" "$SSH_IDENTITY_FILE"; then
+    return 1
+  fi
+
+  if ! check_readable_file "SSH identity file" "$SSH_IDENTITY_FILE"; then
+    return 1
+  fi
+
+  if [[ -n "${SSH_KNOWN_HOSTS_FILE:-}" ]]; then
+    if ! check_absolute_path "SSH known_hosts file" "$SSH_KNOWN_HOSTS_FILE"; then
+      return 1
+    fi
+
+    if ! check_readable_file "SSH known_hosts file" "$SSH_KNOWN_HOSTS_FILE"; then
+      return 1
+    fi
+  fi
+}
+
+check_port() {
+  local port_value="$1"
+
+  if [[ ! "$port_value" =~ ^[0-9]+$ ]]; then
+    echo "Error: SSH port must be a number: $port_value" >&2
     return 1
   fi
 }
@@ -122,56 +181,90 @@ find_latest_report_file() {
   printf '%s\n' "$latest_file"
 }
 
+sftp_quote() {
+  local value="$1"
+
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+
+  printf '"%s"' "$value"
+}
+
 upload_file() {
   local local_file="$1"
-  local remote_path="$2"
-  local remote_url="ftps://${HOST}:${PORT}${remote_path%/}/"
-  local curl_args=(
-    --insecure
-    --ftp-ssl-reqd
-    --user "${FTPS_USERNAME}:${FTPS_PASSWORD}"
-    --quote "PROT P"
-    -T "$local_file"
-    "$remote_url"
+  local remote_dir="$2"
+  local remote_file="${remote_dir%/}/$(basename "$local_file")"
+  local target="${SSH_USERNAME}@${HOST}"
+  local sftp_args=(
+    -b -
+    -P "$PORT"
+    -o BatchMode=yes
+    -o StrictHostKeyChecking=yes
+    -o IdentitiesOnly=yes
+    -i "$SSH_IDENTITY_FILE"
   )
 
-  if [[ "$VERBOSE" -eq 1 ]]; then
-    curl_args=(-v "${curl_args[@]}")
+  if [[ -n "${SSH_KNOWN_HOSTS_FILE:-}" ]]; then
+    sftp_args+=( -o "UserKnownHostsFile=$SSH_KNOWN_HOSTS_FILE" )
   fi
 
-  curl "${curl_args[@]}"
+  if [[ "$VERBOSE" -eq 1 ]]; then
+    sftp_args=( -v "${sftp_args[@]}" )
+  fi
+
+  printf 'put %s %s\nbye\n' \
+    "$(sftp_quote "$local_file")" \
+    "$(sftp_quote "$remote_file")" | sftp "${sftp_args[@]}" "$target"
 }
 
 HOST=""
 PORT=""
 VERBOSE=0
 
-for arg in "$@"; do
-  if [[ "$arg" == "--help" ]]; then
-    usage
-    exit 0
-  fi
-done
-
-while getopts ":h:P:v" opt; do
-  case "$opt" in
-    h) HOST="$OPTARG" ;;
-    P) PORT="$OPTARG" ;;
-    v) VERBOSE=1 ;;
-    :)
-      echo "Error: Option -$OPTARG requires a value." >&2
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -H|--host)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: Option $1 requires a value." >&2
+        usage >&2
+        exit 1
+      fi
+      HOST="$2"
+      shift 2
+      ;;
+    -P|--port)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: Option $1 requires a value." >&2
+        usage >&2
+        exit 1
+      fi
+      PORT="$2"
+      shift 2
+      ;;
+    -v|--verbose)
+      VERBOSE=1
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "Error: Invalid option: $1" >&2
       usage >&2
       exit 1
       ;;
-    \?)
-      echo "Error: Invalid option -$OPTARG" >&2
+    *)
+      echo "Error: Unexpected argument: $1" >&2
       usage >&2
       exit 1
       ;;
   esac
 done
-
-shift $((OPTIND - 1))
 
 if [[ $# -gt 0 ]]; then
   echo "Error: Unexpected arguments: $*" >&2
@@ -183,8 +276,8 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 env_file="$script_dir/.env"
 data_dir="$script_dir/data"
 
-if ! command -v curl >/dev/null 2>&1; then
-  echo "Error: curl was not found on PATH." >&2
+if ! command -v sftp >/dev/null 2>&1; then
+  echo "Error: sftp was not found on PATH." >&2
   exit 127
 fi
 
@@ -192,28 +285,37 @@ if ! load_env_file "$env_file"; then
   exit 1
 fi
 
-if ! check_ftps_env "$env_file"; then
+if ! check_ssh_env "$env_file"; then
   exit 1
 fi
 
-HOST="${HOST:-${FTPS_HOST:-ftp.shoutbomb.com}}"
-PORT="${PORT:-${FTPS_PORT:-990}}"
+HOST="${HOST:-${SSH_HOST:-ftp.shoutbomb.com}}"
+PORT="${PORT:-${SSH_PORT:-22}}"
 
-report_names=(holds renew overdue text-patrons)
-remote_paths=(/Holds /Renew /Overdue /text_patrons)
+if ! check_port "$PORT"; then
+  exit 1
+fi
+
+reports=(
+  "holds:/Holds"
+  "renew:/Renew"
+  "overdue:/Overdue"
+  "text-patrons:/text_patrons"
+)
 had_failure=0
 
-for i in "${!report_names[@]}"; do
-  report_name="${report_names[$i]}"
-  remote_path="${remote_paths[$i]}"
+for report in "${reports[@]}"; do
+  report_name="${report%%:*}"
+  remote_path="${report#*:}"
 
   if latest_file="$(find_latest_report_file "$report_name" "$data_dir")"; then
-    echo "Uploading $latest_file -> $remote_path"
+    remote_file="${remote_path%/}/$(basename "$latest_file")"
+    echo "Uploading $latest_file -> $remote_file"
 
     if upload_file "$latest_file" "$remote_path"; then
-      echo "Upload complete: $(basename "$latest_file") -> $remote_path"
+      echo "Upload complete: $(basename "$latest_file") -> $remote_file"
     else
-      echo "Error: Failed to upload $latest_file -> $remote_path" >&2
+      echo "Error: Failed to upload $latest_file -> $remote_file" >&2
       had_failure=1
     fi
   else

@@ -2,7 +2,7 @@
 
 Small PostgreSQL report-export project for Sierra data destined for Shoutbomb.
 
-This repository contains a Bash report runner, a Bash FTPS uploader, and a set of standalone SQL report queries used to generate and deliver report information to Shoutbomb. The intended workflow is:
+This repository contains a Bash report runner, a Bash SFTP uploader, and a set of standalone SQL report queries used to generate and deliver report information to Shoutbomb. The intended workflow is:
 
 1. put report queries in `sql/`
 2. run `./generate-reports.sh`
@@ -22,9 +22,9 @@ The core responsibility is exporting predictable CSV reports from `psql` and upl
 
 ```text
 .
-├── .env.example          # example PostgreSQL and FTPS settings
+├── .env.example          # example PostgreSQL and SSH/SFTP settings
 ├── generate-reports.sh   # runs every sql/*.sql file with psql
-├── upload.sh             # uploads latest supported CSVs from data/ via FTPS
+├── upload.sh             # uploads latest supported CSVs from data/ via SFTP
 ├── sql/                  # source report queries
 ├── data/                 # generated CSV output
 ├── notes/                # caveats and analysis notes
@@ -36,9 +36,11 @@ The core responsibility is exporting predictable CSV reports from `psql` and upl
 
 - Bash
 - `psql` installed and available on `PATH`
-- `curl` installed and available on `PATH`
+- `sftp` installed and available on `PATH`
 - network access to the target PostgreSQL server
-- network access to the Shoutbomb FTPS server
+- network access to the Shoutbomb SSH/SFTP server
+- an SSH private key authorized for the upload account
+- the SSH host key present in the default `known_hosts` file or a configured alternate known_hosts file
 - a project-root `.env` file containing:
   - PostgreSQL settings for report generation:
     - `PGHOST`
@@ -46,12 +48,13 @@ The core responsibility is exporting predictable CSV reports from `psql` and upl
     - `PGDATABASE`
     - `PGUSER`
     - `PGPASSWORD`
-  - FTPS settings for upload:
-    - `FTPS_USERNAME`
-    - `FTPS_PASSWORD`
-  - optional FTPS overrides:
-    - `FTPS_HOST`
-    - `FTPS_PORT`
+  - SSH/SFTP settings for upload:
+    - `SSH_USERNAME`
+    - `SSH_IDENTITY_FILE` (absolute path)
+  - optional SSH/SFTP overrides:
+    - `SSH_HOST`
+    - `SSH_PORT`
+    - `SSH_KNOWN_HOSTS_FILE` (absolute path)
 
 ## Purpose
 
@@ -73,7 +76,7 @@ A quick start is:
 cp .env.example .env
 ```
 
-Then edit `.env` with the real PostgreSQL/Sierra and FTPS values.
+Then edit `.env` with the real PostgreSQL/Sierra and SSH/SFTP values.
 
 Example:
 
@@ -84,15 +87,17 @@ PGDATABASE=database_name
 PGUSER=username
 PGPASSWORD=secret
 
-FTPS_HOST=ftp.shoutbomb.com
-FTPS_PORT=990
-FTPS_USERNAME=your_username
-FTPS_PASSWORD=secret
+SSH_HOST=ftp.shoutbomb.com
+SSH_PORT=22
+SSH_USERNAME=your_username
+SSH_IDENTITY_FILE=/full/path/to/private_key
+# Optional:
+# SSH_KNOWN_HOSTS_FILE=/full/path/to/known_hosts
 ```
 
 `generate-reports.sh` loads this file automatically and exits with an error if the file is missing or required PostgreSQL values are blank.
 
-`upload.sh` also loads this file automatically and exits with an error if the file is missing or required FTPS values are blank.
+`upload.sh` also loads this file automatically and exits with an error if the file is missing or required SSH/SFTP values are blank. `SSH_IDENTITY_FILE` and `SSH_KNOWN_HOSTS_FILE`, if set, must use absolute paths.
 
 ## Usage
 
@@ -154,24 +159,29 @@ data/renew-1713965123.csv
 - `holds` → `/Holds`
 - `renew` → `/Renew`
 - `overdue` → `/Overdue`
+- `text-patrons` → `/text_patrons`
 
 It:
 
-- loads FTPS settings from `.env`
+- loads SSH/SFTP settings from `.env`
 - looks in `data/` for files matching `<report-name>-<epoch>.csv`
 - selects the latest file for each supported report by filename epoch
-- uploads each selected file to its existing destination directory on the FTPS server
-- continues attempting the remaining uploads if one report file is missing or one upload fails
+- uploads each selected file with its own SFTP invocation
+- uploads each selected file to its existing destination directory on the remote server
+- assumes the destination directories already exist
+- continues attempting remaining uploads if one report file is missing or one upload fails
 - exits non-zero if any required report file is missing or any upload fails
+- always uses strict SSH host key checking
 
-For the filename-convention change that aligned report names with the FTPS destinations, see `notes/report-filename-alignment.md`.
+For the filename-convention change that aligned report names with the destination directories, see `notes/report-filename-alignment.md`.
 
 Optional upload flags:
 
 ```text
--h HOST    FTPS host override
--P PORT    FTPS port override
--v         Verbose curl output
+-h, --help         Show help
+-H, --host HOST    SSH host override
+-P, --port PORT    SSH port override
+-v, --verbose      Verbose sftp output
 ```
 
 ## Current reports
@@ -211,6 +221,10 @@ Exports checkout records that are overdue by more than 9 days and less than 31 d
 
 Exports checkout records due in 2 days, with the same output columns as `overdue.sql`.
 
+### `sql/text-patrons.sql`
+
+Exports patron numbers and normalized mobile phone numbers for text-message related downstream use.
+
 ## Known caveat
 
 A documented aggregation issue affects:
@@ -247,6 +261,7 @@ The output CSV basename comes from the SQL filename:
 - `sql/holds.sql` → `data/holds-<epoch>.csv`
 - `sql/overdue.sql` → `data/overdue-<epoch>.csv`
 - `sql/renew.sql` → `data/renew-<epoch>.csv`
+- `sql/text-patrons.sql` → `data/text-patrons-<epoch>.csv`
 
 Treat changes to any of the following as potentially breaking:
 
@@ -273,7 +288,7 @@ bash -n upload.sh
 
 Actual query validation requires access to the target PostgreSQL/Sierra environment.
 
-Actual upload validation requires access to the target FTPS environment and valid credentials.
+Actual upload validation requires access to the target SSH/SFTP environment, valid SSH credentials, and host key configuration.
 
 ## Notes on generated data
 

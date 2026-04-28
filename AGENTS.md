@@ -2,7 +2,7 @@
 
 ## Project overview
 
-This repository contains a small set of PostgreSQL report queries, a Bash runner that exports each query result to CSV, and a Bash uploader that sends the latest supported CSVs to Shoutbomb over FTPS.
+This repository contains a small set of PostgreSQL report queries, a Bash runner that exports each query result to CSV, and a Bash uploader that sends the latest supported CSVs to Shoutbomb over SFTP/SSH.
 
 The intended workflow is:
 
@@ -22,7 +22,7 @@ The repository is intentionally simple. There is no application runtime, package
 - `generate-reports.sh`
   - Bash entrypoint that discovers and runs all `sql/*.sql` files with `psql`
 - `upload.sh`
-  - Bash entrypoint that uploads the latest supported CSV files from `data/` to Shoutbomb over FTPS
+  - Bash entrypoint that uploads the latest supported CSV files from `data/` to Shoutbomb over SFTP/SSH
 - `sql/`
   - source SQL reports; every `*.sql` file in this directory is executed by the script
 - `data/`
@@ -40,6 +40,7 @@ At the time of writing, the repository contains:
 - `sql/holds.sql`
 - `sql/overdue.sql`
 - `sql/renew.sql`
+- `sql/text-patrons.sql`
 
 These are Sierra/PostgreSQL reporting queries against `sierra_view` tables.
 
@@ -58,16 +59,18 @@ The report runner assumes:
 
 The uploader assumes:
 
-- `curl` is installed and available on `PATH`
-- FTPS connection details are available in the project `.env` file
-- the executing environment has network access to the target FTPS server
+- `sftp` is installed and available on `PATH`
+- SSH/SFTP connection details are available in the project `.env` file
+- the executing environment has network access to the target SSH/SFTP server
+- the upload account can authenticate with an SSH private key
+- the target host key is already trusted via the default `known_hosts` file or a configured alternate known_hosts file
 
 Important:
 
 - agents working in this repository should **not assume** they can reach the live database
-- agents should **not assume** they have working FTPS credentials or server access
+- agents should **not assume** they have working SSH/SFTP credentials or server access
 - syntax and file-level validation can be performed locally
-- actual query execution and FTPS upload may only be possible for the repository owner or in the target environment
+- actual query execution and SFTP upload may only be possible for the repository owner or in the target environment
 
 ## Report runner behavior
 
@@ -107,6 +110,7 @@ Important:
   - `sql/holds.sql` -> `data/holds-<epoch>.csv`
   - `sql/overdue.sql` -> `data/overdue-<epoch>.csv`
   - `sql/renew.sql` -> `data/renew-<epoch>.csv`
+  - `sql/text-patrons.sql` -> `data/text-patrons-<epoch>.csv`
 
 ### Query shape
 
@@ -169,7 +173,7 @@ If modifying `generate-reports.sh` or `upload.sh`:
 
 - keep it POSIX-aware Bash, but Bash-specific features are acceptable since the shebang is Bash
 - preserve safe shell practices already in use
-- do not hardcode credentials, database hosts, or FTPS hosts unless explicitly requested
+- do not hardcode credentials, database hosts, or SSH hosts unless explicitly requested
 - prefer readable control flow over clever shell tricks
 - keep help text current with actual behavior
 - preserve the current default behavior unless explicitly asked to change it
@@ -187,7 +191,7 @@ bash -n upload.sh
 
 If database access is available, a real query execution against the intended environment is ideal, but do not claim query validation unless it was actually performed.
 
-If FTPS access is available, a real upload is ideal, but do not claim upload validation unless it was actually performed.
+If SSH/SFTP access is available, a real upload is ideal, but do not claim upload validation unless it was actually performed.
 
 ## Data directory guidance
 
