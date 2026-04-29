@@ -167,7 +167,7 @@ Useful to know:
 
 - `sql/holds.sql` — hold-related item and patron data
 - `sql/overdue.sql` — items overdue by more than 9 days and less than 31 days
-- `sql/renew.sql` — items due in 2 days
+- `sql/renew.sql` — items due between today and 2 days from now
 - `sql/text-patrons.sql` — patron numbers and normalized mobile phone numbers
 
 ## Notes and caveats

@@ -46,7 +46,7 @@ FROM
 		AND rmb.record_type_code = 'b'
 	)
 WHERE
-	(c.due_gmt::date - current_date) = 2
+	c.due_gmt::date BETWEEN current_date AND current_date + 2
 GROUP BY
 	1,
 	2,
