@@ -13,7 +13,8 @@ The filter changed from:
 to:
 
 ```sql
-c.due_gmt::date BETWEEN current_date AND current_date + 2
+c.due_gmt >= current_date
+AND c.due_gmt < current_date + INTERVAL '3 days'
 ```
 
 ## Impact
@@ -25,6 +26,8 @@ The report now includes items due on:
 - today
 - tomorrow
 - two days from now
+
+The query now expresses that window as a timestamp range on `c.due_gmt` instead of casting `c.due_gmt` to `date`, which may allow a plain index on `c.due_gmt` to be used more effectively.
 
 Unchanged:
 

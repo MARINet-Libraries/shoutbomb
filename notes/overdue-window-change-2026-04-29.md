@@ -14,7 +14,8 @@ AND (current_date - c.due_gmt::date) < 31
 to:
 
 ```sql
-c.due_gmt::date BETWEEN current_date - 30 AND current_date - 1
+c.due_gmt >= current_date - INTERVAL '30 days'
+AND c.due_gmt < current_date
 ```
 
 ## Impact
@@ -24,6 +25,8 @@ This changes row filtering for the `overdue` report.
 The report now includes items with due dates from 1 to 30 days ago.
 
 It no longer limits results to items that are at least 10 days past due, but it still excludes items due today.
+
+The query now expresses that window as a timestamp range on `c.due_gmt` instead of casting `c.due_gmt` to `date`, which may allow a plain index on `c.due_gmt` to be used more effectively.
 
 Unchanged:
 

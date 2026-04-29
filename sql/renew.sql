@@ -46,7 +46,8 @@ FROM
 		AND rmb.record_type_code = 'b'
 	)
 WHERE
-	c.due_gmt::date BETWEEN current_date AND current_date + 2
+	c.due_gmt >= current_date
+	AND c.due_gmt < current_date + INTERVAL '3 days'
 GROUP BY
 	1,
 	2,
