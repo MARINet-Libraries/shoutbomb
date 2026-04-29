@@ -11,7 +11,7 @@ SELECT
 	c.renewal_count AS renewals,
 	'b' || rmb.record_num || 'a' AS bib_no,
 	c.id AS checkout_id,
-	pv.barcode
+	pv.barcode AS barcode
 FROM
 	sierra_view.checkout AS c
 	RIGHT JOIN sierra_view.patron_record AS p ON (p.id = c.patron_record_id)
@@ -49,16 +49,16 @@ WHERE
 	c.due_gmt >= current_date
 	AND c.due_gmt < current_date + INTERVAL '3 days'
 GROUP BY
-	1,
-	2,
-	3,
-	4,
-	5,
-	6,
-	7,
-	10,
-	11,
-	12,
-	13
+	patron_no,
+	item_barcode,
+	title,
+	due_date,
+	item_no,
+	money_owed,
+	loan_rule,
+	renewals,
+	bib_no,
+	checkout_id,
+	barcode
 ORDER BY
 	patron_no
