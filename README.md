@@ -5,9 +5,9 @@ Small PostgreSQL report-export project for Sierra data destined for Shoutbomb.
 This repository contains a Bash report runner, a Bash SFTP uploader, and a set of standalone SQL report queries used to generate and deliver report information to Shoutbomb. The intended workflow is:
 
 1. put report queries in `sql/`
-2. run `./generate-reports.sh`
+2. run `./generate-reports`
 3. review generated CSV files in `data/`
-4. run `./upload.sh` to upload the latest supported report files
+4. run `./upload` to upload the latest supported report files
 
 The project is intentionally simple:
 
@@ -23,8 +23,8 @@ The core responsibility is exporting predictable CSV reports from `psql` and upl
 ```text
 .
 ├── .env.example          # example PostgreSQL and SSH/SFTP settings
-├── generate-reports.sh   # runs every sql/*.sql file with psql
-├── upload.sh             # uploads latest supported CSVs from data/ via SFTP
+├── generate-reports   # runs every sql/*.sql file with psql
+├── upload             # uploads latest supported CSVs from data/ via SFTP
 ├── sql/                  # source report queries
 ├── data/                 # generated CSV output
 ├── notes/                # caveats and analysis notes
@@ -95,40 +95,40 @@ SSH_IDENTITY_FILE=/full/path/to/private_key
 # SSH_KNOWN_HOSTS_FILE=/full/path/to/known_hosts
 ```
 
-`generate-reports.sh` loads this file automatically and exits with an error if the file is missing or required PostgreSQL values are blank.
+`generate-reports` loads this file automatically and exits with an error if the file is missing or required PostgreSQL values are blank.
 
-`upload.sh` also loads this file automatically and exits with an error if the file is missing or required SSH/SFTP values are blank. `SSH_IDENTITY_FILE` and `SSH_KNOWN_HOSTS_FILE`, if set, must use absolute paths.
+`upload` also loads this file automatically and exits with an error if the file is missing or required SSH/SFTP values are blank. `SSH_IDENTITY_FILE` and `SSH_KNOWN_HOSTS_FILE`, if set, must use absolute paths.
 
 ## Usage
 
 Generate all reports with headers:
 
 ```bash
-./generate-reports.sh
+./generate-reports
 ```
 
 Generate only selected reports with headers:
 
 ```bash
-./generate-reports.sh --reports holds renew
+./generate-reports --reports holds renew
 ```
 
 Generate all reports without headers:
 
 ```bash
-./generate-reports.sh --no-headers
+./generate-reports --no-headers
 ```
 
 Upload the latest supported report files:
 
 ```bash
-./upload.sh
+./upload
 ```
 
 Upload only selected supported reports:
 
 ```bash
-./upload.sh --reports holds overdue
+./upload --reports holds overdue
 ```
 
 Report selections must use basenames such as `holds`, not filenames such as `holds.sql`.
@@ -136,13 +136,13 @@ Report selections must use basenames such as `holds`, not filenames such as `hol
 Show help:
 
 ```bash
-./generate-reports.sh --help
-./upload.sh --help
+./generate-reports --help
+./upload --help
 ```
 
 ## Report runner behavior
 
-`generate-reports.sh` is the canonical export entrypoint.
+`generate-reports` is the canonical export entrypoint.
 
 It:
 
@@ -171,7 +171,7 @@ data/renew-1713965123.csv
 
 ## Upload behavior
 
-`upload.sh` uploads only the latest generated file for each supported report type:
+`upload` uploads only the latest generated file for each supported report type:
 
 - `holds` → `/Holds`
 - `renew` → `/Renew`
@@ -301,10 +301,10 @@ If report semantics change, document the reason in `notes/`.
 For script-only changes, the minimum local checks are:
 
 ```bash
-bash -n generate-reports.sh
-./generate-reports.sh --help
-bash -n upload.sh
-./upload.sh --help
+bash -n generate-reports
+./generate-reports --help
+bash -n upload
+./upload --help
 ```
 
 Actual query validation requires access to the target PostgreSQL/Sierra environment.

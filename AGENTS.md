@@ -2,7 +2,7 @@
 
 ## Scope
 
-This repository contains standalone SQL report queries in `sql/`, a Bash export runner in `generate-reports.sh`, a Bash SFTP uploader in `upload.sh`, project notes in `notes/`, and generated CSV artifacts in `data/`.
+This repository contains standalone SQL report queries in `sql/`, a Bash export runner in `generate-reports`, a Bash SFTP uploader in `upload`, project notes in `notes/`, and generated CSV artifacts in `data/`.
 
 ## Critical rules
 
@@ -16,8 +16,8 @@ This repository contains standalone SQL report queries in `sql/`, a Bash export 
 ## Read minimally
 
 - For a single-report task, read only the relevant `sql/<name>.sql` file.
-- Read `generate-reports.sh` only when the task concerns export behavior.
-- Read `upload.sh` only when the task concerns upload behavior; treat its supported-report mapping as canonical.
+- Read `generate-reports` only when the task concerns export behavior.
+- Read `upload` only when the task concerns upload behavior; treat its supported-report mapping as canonical.
 - Read `notes/` only when the touched file is referenced there or the task changes semantics, output, or caveats.
 - Do not inspect generated CSV files unless the task is specifically about generated output.
 
@@ -43,19 +43,19 @@ This repository contains standalone SQL report queries in `sql/`, a Bash export 
 - Keep Bash readable and safe; Bash-specific features are acceptable.
 - Preserve current default behavior unless explicitly asked to change it.
 - Do not hardcode credentials, database hosts, or SSH hosts unless explicitly requested.
-- `generate-reports.sh` is the canonical export entrypoint.
-- `upload.sh` is the canonical source for supported upload report names and destination mapping.
+- `generate-reports` is the canonical export entrypoint.
+- `upload` is the canonical source for supported upload report names and destination mapping.
 - Minimum local checks after editing a script:
-  - `bash -n generate-reports.sh`
-  - `./generate-reports.sh --help`
-  - `bash -n upload.sh`
-  - `./upload.sh --help`
+  - `bash -n generate-reports`
+  - `./generate-reports --help`
+  - `bash -n upload`
+  - `./upload --help`
 
 ### Adding, removing, or renaming a report
 
 - Put runnable report SQL in `sql/`.
-- Remember that `generate-reports.sh` automatically discovers every `sql/*.sql` file.
-- If a report should be uploaded, update `upload.sh` and any affected docs/notes together.
+- Remember that `generate-reports` automatically discovers every `sql/*.sql` file.
+- If a report should be uploaded, update `upload` and any affected docs/notes together.
 - Treat filename convention changes, supported-report-name changes, and upload destination changes as breaking.
 
 ## Breaking changes to call out
@@ -84,5 +84,5 @@ If any of the above change, update `notes/` when the downstream impact is non-tr
 
 - Project overview and operator usage: `README.md`
 - Query caveats and rationale: `notes/`
-- Export behavior: `generate-reports.sh`
-- Upload behavior and supported-report mapping: `upload.sh`
+- Export behavior: `generate-reports`
+- Upload behavior and supported-report mapping: `upload`

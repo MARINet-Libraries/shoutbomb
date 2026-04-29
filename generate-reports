@@ -4,7 +4,7 @@ set -o pipefail
 
 usage() {
   cat <<'EOF'
-Usage: ./generate-reports.sh [--headers|--no-headers] [--reports REPORT [REPORT ...]] [--help]
+Usage: ./generate-reports [--headers|--no-headers] [--reports REPORT [REPORT ...]] [--help]
 
 Runs every .sql file in ./sql by default using psql and writes CSV output to ./data.
 The script loads PostgreSQL connection details from ./.env in the project root.

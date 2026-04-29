@@ -4,7 +4,7 @@ set -o pipefail
 
 usage() {
   cat <<'EOF'
-Usage: ./upload.sh [--reports REPORT [REPORT ...]] [--help] [-H HOST] [-P PORT] [-v]
+Usage: ./upload [--reports REPORT [REPORT ...]] [--help] [-H HOST] [-P PORT] [-v]
 
 Uploads the latest generated CSV for each supported report in ./data by default:
   holds         -> /Holds
