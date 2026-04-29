@@ -166,7 +166,7 @@ Useful to know:
 ## Current reports
 
 - `sql/holds.sql` — hold-related item and patron data
-- `sql/overdue.sql` — items overdue by more than 9 days and less than 31 days
+- `sql/overdue.sql` — items due between 30 days ago and yesterday, inclusive
 - `sql/renew.sql` — items due between today and 2 days from now
 - `sql/text-patrons.sql` — patron numbers and normalized mobile phone numbers
 
