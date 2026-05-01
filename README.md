@@ -163,6 +163,28 @@ Useful to know:
 ./upload --help
 ```
 
+## Running from cron
+
+For scheduled runs, a good pattern is to call the scripts by absolute path and pipe their combined stdout/stderr through `logger` so log retention and rotation are handled by the system logger instead of by project-managed log files.
+
+The scripts resolve `.env`, `sql/`, and `data/` relative to their own location, so a `cd` wrapper is not required.
+
+Example cron entries:
+
+```cron
+50 7,11,15 * * * /bin/bash -o pipefail -c '/opt/scripts/shoutbomb/generate-reports --reports text-patrons 2>&1 | /usr/bin/logger -t shoutbomb-generate-reports && /opt/scripts/shoutbomb/upload --reports text-patrons 2>&1 | /usr/bin/logger -t shoutbomb-upload'
+00 08 * * * /bin/bash -o pipefail -c '/opt/scripts/shoutbomb/generate-reports --reports overdue renew 2>&1 | /usr/bin/logger -t shoutbomb-generate-reports && /opt/scripts/shoutbomb/upload --reports overdue renew 2>&1 | /usr/bin/logger -t shoutbomb-upload'
+00 08,12,16 * * * /bin/bash -o pipefail -c '/opt/scripts/shoutbomb/generate-reports --reports holds overdue renew 2>&1 | /usr/bin/logger -t shoutbomb-generate-reports && /opt/scripts/shoutbomb/upload --reports holds overdue renew 2>&1 | /usr/bin/logger -t shoutbomb-upload'
+```
+
+Using `/bin/bash -o pipefail -c '...'` preserves the failure status of `generate-reports` and `upload` even though their output is piped to `logger`.
+
+On systems that write syslog output to `/var/log/syslog`, you can review these messages with commands such as:
+
+```bash
+sudo cat /var/log/syslog | grep shoutbomb-
+```
+
 ## Current reports
 
 - `sql/holds.sql` — hold-related item and patron data
