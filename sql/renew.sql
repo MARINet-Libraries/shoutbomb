@@ -11,6 +11,7 @@ SELECT
 	c.renewal_count AS renewals,
 	'b' || rmb.record_num || 'a' AS bib_no,
 	c.id AS checkout_id,
+	c.overdue_gmt AS overdue,
 	pv.barcode AS barcode
 FROM
 	sierra_view.checkout AS c
