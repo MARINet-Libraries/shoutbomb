@@ -14,10 +14,11 @@ cp .env.example .env
 
 `shoutbomb` is a small command-line project for exporting Sierra/PostgreSQL report data to CSV and, when needed, uploading those CSVs to Shoutbomb over SFTP.
 
-It has two main scripts:
+It has three main scripts:
 
 - `./generate-reports` — runs every SQL file in `sql/` and writes CSVs to `data/`
 - `./upload` — uploads the latest supported CSVs from `data/` to Shoutbomb
+- `./archive-reports` — archives older CSVs from `data/` into `data/_archive/` and deletes sufficiently old archived CSVs
 
 Typical workflow:
 
@@ -25,6 +26,7 @@ Typical workflow:
 2. run `./generate-reports`
 3. review the output in `data/`
 4. run `./upload` if you want to send the latest files to Shoutbomb
+5. run `./archive-reports` separately when you want to archive or prune older generated files
 
 ## Repository layout
 
@@ -33,6 +35,7 @@ Typical workflow:
 ├── .env.example
 ├── generate-reports
 ├── upload
+├── archive-reports
 ├── sql/
 ├── data/
 ├── notes/
@@ -156,11 +159,35 @@ Useful to know:
 - destination directories on the remote server must already exist
 - strict SSH host key checking is always enabled
 
+### Archive and prune old report files
+
+Archive active files older than 2 days and delete archived files older than 30 days:
+
+```bash
+./archive-reports --archive 2 --delete-archived 30
+```
+
+Preview the same archive/prune run without changing files:
+
+```bash
+./archive-reports --dry-run --archive 2 --delete-archived 30
+```
+
+What it does:
+
+- moves eligible `data/*.csv` files into `data/_archive/`
+- deletes eligible `data/_archive/*.csv` files
+- decides file age from the Unix timestamp embedded in filenames like `holds-1714521600.csv`
+- does not use filesystem modification time for retention decisions
+- processes archived-file deletion before active-file archiving when both options are supplied
+- only `data/` is scanned by `./upload`, so schedule `./archive-reports` after any review or upload workflow that depends on active files remaining there
+
 ### Help
 
 ```bash
 ./generate-reports --help
 ./upload --help
+./archive-reports --help
 ```
 
 ## Running from cron
@@ -175,14 +202,17 @@ Example cron entries:
 50 7,11,15 * * * /bin/bash -o pipefail -c '/opt/scripts/shoutbomb/generate-reports --reports text-patrons 2>&1 | /usr/bin/logger -t shoutbomb-generate-reports && /opt/scripts/shoutbomb/upload --reports text-patrons 2>&1 | /usr/bin/logger -t shoutbomb-upload'
 00 08 * * * /bin/bash -o pipefail -c '/opt/scripts/shoutbomb/generate-reports --reports overdue renew 2>&1 | /usr/bin/logger -t shoutbomb-generate-reports && /opt/scripts/shoutbomb/upload --reports overdue renew 2>&1 | /usr/bin/logger -t shoutbomb-upload'
 00 08,12,16 * * * /bin/bash -o pipefail -c '/opt/scripts/shoutbomb/generate-reports --reports holds overdue renew 2>&1 | /usr/bin/logger -t shoutbomb-generate-reports && /opt/scripts/shoutbomb/upload --reports holds overdue renew 2>&1 | /usr/bin/logger -t shoutbomb-upload'
+30 18 * * * /bin/bash -o pipefail -c '/opt/scripts/shoutbomb/archive-reports --archive 2 --delete-archived 30 2>&1 | /usr/bin/logger -t shoutbomb-archive-reports'
 ```
 
-Using `/bin/bash -o pipefail -c '...'` preserves the failure status of `generate-reports` and `upload` even though their output is piped to `logger`.
+Schedule `archive-reports` after any generate/upload workflow that still depends on files remaining in active `data/`.
+
+Using `/bin/bash -o pipefail -c '...'` preserves the failure status of `generate-reports`, `upload`, and `archive-reports` even though their output is piped to `logger`.
 
 On systems that write syslog output to `/var/log/syslog`, you can review these messages with commands such as:
 
 ```bash
-sudo cat /var/log/syslog | egrep "shoutbomb-generate-reports|shoutbomb-upload"
+sudo cat /var/log/syslog | egrep "shoutbomb-generate-reports|shoutbomb-upload|shoutbomb-archive-reports"
 ```
 
 ## Current reports

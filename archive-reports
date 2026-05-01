@@ -1,0 +1,399 @@
+#!/usr/bin/env bash
+set -u
+set -o pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: ./archive-reports [--archive DAYS] [--delete-archived DAYS] [--dry-run] [--help]
+
+Archives and deletes generated report CSV files using the Unix timestamp embedded in
+filenames such as holds-1714521600.csv, not filesystem modification time.
+
+Options:
+  --archive DAYS            Move eligible data/*.csv files to data/_archive/
+  --delete-archived DAYS   Delete eligible data/_archive/*.csv files
+  --dry-run                Show what would happen without changing files
+  -h, --help               Show this help text
+
+Rules:
+  - At least one of --archive or --delete-archived is required
+  - DAYS must be a non-negative integer
+  - Eligibility is based on the trailing -<epoch>.csv filename suffix
+  - 0 means every matching file whose embedded epoch is not in the future
+  - When both options are given, archived files are deleted first, then
+    active files are archived
+
+Examples:
+  ./archive-reports --archive 2
+  ./archive-reports --delete-archived 30
+  ./archive-reports --archive 2 --delete-archived 30
+  ./archive-reports --dry-run --archive 2 --delete-archived 30
+EOF
+}
+
+is_non_negative_integer() {
+  [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+display_path() {
+  local path="$1"
+
+  if [[ "$path" == "$script_dir/"* ]]; then
+    printf '%s\n' "${path#$script_dir/}"
+  else
+    printf '%s\n' "$path"
+  fi
+}
+
+warn() {
+  echo "Warning: $*" >&2
+  warning_count=$((warning_count + 1))
+}
+
+error() {
+  echo "Error: $*" >&2
+}
+
+validate_days_option() {
+  local option_name="$1"
+  local option_value="$2"
+
+  if ! is_non_negative_integer "$option_value"; then
+    error "Option $option_name requires a non-negative integer DAYS value: $option_value"
+    return 1
+  fi
+}
+
+array_contains() {
+  local needle="$1"
+  shift
+  local value
+
+  for value in "$@"; do
+    if [[ "$value" == "$needle" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+extract_epoch_from_basename() {
+  local basename="$1"
+
+  if [[ "$basename" =~ ^.+-([0-9]+)\.csv$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  return 1
+}
+
+is_eligible_for_days() {
+  local epoch="$1"
+  local days="$2"
+  local cutoff
+
+  cutoff=$((now - (days * 86400)))
+  (( 10#$epoch <= cutoff ))
+}
+
+check_data_directory() {
+  if [[ ! -e "$data_dir" ]]; then
+    error "Data directory not found: $(display_path "$data_dir")"
+    return 1
+  fi
+
+  if [[ ! -d "$data_dir" ]]; then
+    error "Data path is not a directory: $(display_path "$data_dir")"
+    return 1
+  fi
+}
+
+check_archive_directory_path() {
+  if [[ -e "$archive_dir" && ! -d "$archive_dir" ]]; then
+    error "Archive path is not a directory: $(display_path "$archive_dir")"
+    return 1
+  fi
+}
+
+prepare_archive_directory() {
+  if [[ -d "$archive_dir" ]]; then
+    return 0
+  fi
+
+  if [[ "$dry_run" -eq 1 ]]; then
+    echo "Would create archive directory: $(display_path "$archive_dir")"
+    return 0
+  fi
+
+  if mkdir -p -- "$archive_dir"; then
+    echo "Created archive directory: $(display_path "$archive_dir")"
+    return 0
+  fi
+
+  error "Failed to create archive directory: $(display_path "$archive_dir")"
+  return 1
+}
+
+process_delete_candidate() {
+  local file_path="$1"
+  local days="$2"
+  local basename
+  local display
+  local epoch
+
+  display="$(display_path "$file_path")"
+
+  if [[ ! -f "$file_path" || -L "$file_path" ]]; then
+    warn "Skipping non-regular file: $display"
+    skipped_count=$((skipped_count + 1))
+    return 0
+  fi
+
+  basename="$(basename "$file_path")"
+
+  if ! epoch="$(extract_epoch_from_basename "$basename")"; then
+    warn "Skipping unexpected filename: $display"
+    skipped_count=$((skipped_count + 1))
+    return 0
+  fi
+
+  if ! is_eligible_for_days "$epoch" "$days"; then
+    return 0
+  fi
+
+  if [[ "$dry_run" -eq 1 ]]; then
+    planned_deleted_paths+=("$file_path")
+    echo "Would delete archived file: $display"
+    deleted_count=$((deleted_count + 1))
+    return 0
+  fi
+
+  if rm -f -- "$file_path"; then
+    echo "Deleted archived file: $display"
+    deleted_count=$((deleted_count + 1))
+  else
+    error "Failed to delete archived file: $display"
+    failure_count=$((failure_count + 1))
+  fi
+}
+
+process_archive_candidate() {
+  local file_path="$1"
+  local days="$2"
+  local basename
+  local destination_path
+  local display
+  local epoch
+
+  display="$(display_path "$file_path")"
+
+  if [[ ! -f "$file_path" || -L "$file_path" ]]; then
+    warn "Skipping non-regular file: $display"
+    skipped_count=$((skipped_count + 1))
+    return 0
+  fi
+
+  basename="$(basename "$file_path")"
+
+  if ! epoch="$(extract_epoch_from_basename "$basename")"; then
+    warn "Skipping unexpected filename: $display"
+    skipped_count=$((skipped_count + 1))
+    return 0
+  fi
+
+  if ! is_eligible_for_days "$epoch" "$days"; then
+    return 0
+  fi
+
+  destination_path="$archive_dir/$basename"
+
+  if [[ -e "$destination_path" ]]; then
+    if [[ "$dry_run" -eq 1 ]] && array_contains "$destination_path" "${planned_deleted_paths[@]}"; then
+      :
+    else
+      warn "Overwriting archived file: $(display_path "$destination_path")"
+    fi
+  fi
+
+  if [[ "$dry_run" -eq 1 ]]; then
+    echo "Would archive: $display -> $(display_path "$destination_path")"
+    archived_count=$((archived_count + 1))
+    return 0
+  fi
+
+  if mv -f -- "$file_path" "$destination_path"; then
+    echo "Archived: $display -> $(display_path "$destination_path")"
+    archived_count=$((archived_count + 1))
+  else
+    error "Failed to archive $display -> $(display_path "$destination_path")"
+    failure_count=$((failure_count + 1))
+  fi
+}
+
+run_delete_archived() {
+  local days="$1"
+  local file_path
+
+  if [[ ! -e "$archive_dir" ]]; then
+    echo "No archive directory present; nothing to delete: $(display_path "$archive_dir")"
+    return 0
+  fi
+
+  shopt -s nullglob
+  for file_path in "$archive_dir"/*.csv; do
+    process_delete_candidate "$file_path" "$days"
+  done
+  shopt -u nullglob
+}
+
+run_archive() {
+  local days="$1"
+  local file_path
+
+  if ! prepare_archive_directory; then
+    failure_count=$((failure_count + 1))
+    return 1
+  fi
+
+  shopt -s nullglob
+  for file_path in "$data_dir"/*.csv; do
+    process_archive_candidate "$file_path" "$days"
+  done
+  shopt -u nullglob
+}
+
+print_summary() {
+  if [[ "$dry_run" -eq 1 ]]; then
+    echo "Dry-run summary:"
+    echo "  Would archive: $archived_count file(s)"
+    echo "  Would delete archived: $deleted_count file(s)"
+  else
+    echo "Summary:"
+    echo "  Archived: $archived_count file(s)"
+    echo "  Deleted archived: $deleted_count file(s)"
+  fi
+
+  echo "  Warnings: $warning_count"
+  echo "  Skipped: $skipped_count"
+  echo "  Failures: $failure_count"
+}
+
+archive_days=""
+delete_archived_days=""
+dry_run=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --archive)
+      if [[ $# -lt 2 ]]; then
+        error "Option $1 requires a value."
+        usage >&2
+        exit 2
+      fi
+      archive_days="$2"
+      shift 2
+      ;;
+    --delete-archived)
+      if [[ $# -lt 2 ]]; then
+        error "Option $1 requires a value."
+        usage >&2
+        exit 2
+      fi
+      delete_archived_days="$2"
+      shift 2
+      ;;
+    --dry-run)
+      dry_run=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -* )
+      error "Invalid option: $1"
+      usage >&2
+      exit 2
+      ;;
+    *)
+      error "Unexpected argument: $1"
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ $# -gt 0 ]]; then
+  error "Unexpected arguments: $*"
+  usage >&2
+  exit 2
+fi
+
+if [[ -z "$archive_days" && -z "$delete_archived_days" ]]; then
+  error "At least one of --archive or --delete-archived is required."
+  usage >&2
+  exit 2
+fi
+
+if [[ -n "$archive_days" ]] && ! validate_days_option --archive "$archive_days"; then
+  exit 2
+fi
+
+if [[ -n "$delete_archived_days" ]] && ! validate_days_option --delete-archived "$delete_archived_days"; then
+  exit 2
+fi
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+data_dir="$script_dir/data"
+archive_dir="$data_dir/_archive"
+now="$(date +%s 2>/dev/null)"
+warning_count=0
+skipped_count=0
+archived_count=0
+deleted_count=0
+failure_count=0
+planned_deleted_paths=()
+
+if ! is_non_negative_integer "$now"; then
+  error "Failed to determine the current Unix timestamp."
+  exit 1
+fi
+
+if ! check_data_directory; then
+  exit 1
+fi
+
+if ! check_archive_directory_path; then
+  exit 1
+fi
+
+if [[ "$dry_run" -eq 1 ]]; then
+  echo "Dry-run mode: no files will be changed."
+fi
+
+if [[ -n "$delete_archived_days" ]]; then
+  run_delete_archived "$delete_archived_days"
+fi
+
+if [[ -n "$archive_days" ]]; then
+  run_archive "$archive_days"
+fi
+
+print_summary
+
+if [[ "$failure_count" -ne 0 ]]; then
+  if [[ "$dry_run" -eq 1 ]]; then
+    echo "Dry-run completed with one or more failures." >&2
+  else
+    echo "Completed with one or more failures." >&2
+  fi
+  exit 1
+fi
+
+echo "Archive maintenance completed successfully."
