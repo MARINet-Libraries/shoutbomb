@@ -182,7 +182,7 @@ Using `/bin/bash -o pipefail -c '...'` preserves the failure status of `generate
 On systems that write syslog output to `/var/log/syslog`, you can review these messages with commands such as:
 
 ```bash
-sudo cat /var/log/syslog | grep shoutbomb-
+sudo cat /var/log/syslog | egrep "shoutbomb-generate-reports|shoutbomb-upload"
 ```
 
 ## Current reports
