@@ -7,4 +7,5 @@ SELECT
       ON r.patron_record_phone_type_id = ty.id
   --p is field tag for the telephone2 var field
   WHERE ty.code = 'p'
-  AND v.notification_medium_code = 't';
+  AND v.notification_medium_code = 't'
+  ORDER BY v.barcode;
