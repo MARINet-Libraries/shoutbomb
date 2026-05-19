@@ -47,10 +47,10 @@ FROM
 		AND rmb.record_type_code = 'b'
 	)
 WHERE
-	c.due_gmt >= current_date
-	AND c.due_gmt < current_date + INTERVAL '3 days'
-	--- Filter out items that are overdue
-	AND c.overdue_gmt > current_date + INTERVAL '1 day'
+	c.due_gmt >= CURRENT_DATE
+	AND c.due_gmt < CURRENT_DATE + INTERVAL '3 days'
+	-- Filter out items that are overdue
+	AND c.overdue_gmt > CURRENT_DATE + INTERVAL '1 day'
 GROUP BY
 	patron_no,
 	item_barcode,
@@ -65,4 +65,4 @@ GROUP BY
 	barcode,
 	overdue
 ORDER BY
-	patron_no
+	patron_no;

@@ -1,8 +1,7 @@
 SELECT
 	TRIM(
 		TRAILING '/'
-		FROM
-			COALESCE(s.content, bt.field_content)
+		FROM COALESCE(s.content, bt.field_content)
 	) AS title,
 	TO_CHAR(rmi.record_last_updated_gmt, 'MM-DD-YYYY') AS last_update,
 	'i' || rmi.record_num || 'a' AS item_no,
@@ -50,4 +49,4 @@ WHERE
 	AND i.item_status_code = '!'
 	AND h.pickup_location_code IS NOT NULL
 ORDER BY
-	patron_no
+	patron_no;
