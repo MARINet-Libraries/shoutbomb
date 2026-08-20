@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+set -u
+set -o pipefail
+
+monitoring_finished=0
+
+generate_report_names=()
+upload_report_names=()
+generate_reports_requested=0
+upload_reports_requested=0
+
+usage() {
+  cat <<'EOF'
+Usage: ./services/generate-and-upload [--generate-reports REPORT [REPORT ...]] [--upload-reports REPORT [REPORT ...]] [--help]
+
+Runs generate-reports and, only when generation succeeds, runs upload.
+Command output is sent to logger using the existing shoutbomb tags, and
+Healthchecks.io is notified when the workflow starts and finishes.
+The service loads HEALTHCHECKS_URL from ./.env in the project root.
+
+Options:
+  --generate-reports REPORT [...]  Reports to pass to generate-reports
+  --upload-reports REPORT [...]    Reports to pass to upload
+  -h, --help                       Show this help text
+
+If a report option is omitted, the corresponding script runs without --reports
+and uses its existing default report selection.
+EOF
+}
+
+load_env_file() {
+  local env_file="$1"
+  local source_status
+
+  if [[ ! -f "$env_file" ]]; then
+    echo "Error: Environment file not found: $env_file" >&2
+    return 1
+  fi
+
+  if [[ ! -r "$env_file" ]]; then
+    echo "Error: Environment file is not readable: $env_file" >&2
+    return 1
+  fi
+
+  set -a
+  # shellcheck disable=SC1090
+  . "$env_file"
+  source_status=$?
+  set +a
+
+  if [[ $source_status -ne 0 ]]; then
+    echo "Error: Failed to load environment file: $env_file" >&2
+    return 1
+  fi
+}
+
+check_healthchecks_env() {
+  local env_file="$1"
+
+  if [[ -z "${HEALTHCHECKS_URL:-}" ]]; then
+    echo "Error: Missing required Healthchecks.io setting in $env_file: HEALTHCHECKS_URL" >&2
+    return 1
+  fi
+}
+
+send_healthcheck_ping() {
+  local suffix="$1"
+  local curl_path
+
+  if ! curl_path="$(command -v curl 2>/dev/null)"; then
+    return 0
+  fi
+
+  "$curl_path" \
+    -fsS \
+    --connect-timeout 2 \
+    --max-time 5 \
+    -o /dev/null \
+    "${HEALTHCHECKS_URL}${suffix}" \
+    </dev/null >/dev/null 2>&1 || true
+}
+
+finish() {
+  local status="$1"
+
+  trap - HUP INT TERM
+  monitoring_finished=1
+
+  if [[ $status -eq 0 ]]; then
+    send_healthcheck_ping ""
+  else
+    send_healthcheck_ping "/fail"
+  fi
+
+  exit "$status"
+}
+
+handle_exit() {
+  local status="$1"
+
+  trap - EXIT
+
+  if [[ $monitoring_finished -eq 0 ]]; then
+    send_healthcheck_ping "/fail"
+  fi
+
+  exit "$status"
+}
+
+run_logged() {
+  local tag="$1"
+  shift
+
+  "$@" 2>&1 | /usr/bin/logger -t "$tag"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --generate-reports)
+      generate_reports_requested=1
+      shift
+
+      if [[ $# -eq 0 || "$1" == -* ]]; then
+        echo "Error: Option --generate-reports requires at least one report name." >&2
+        usage >&2
+        exit 2
+      fi
+
+      while [[ $# -gt 0 && "$1" != -* ]]; do
+        generate_report_names+=("$1")
+        shift
+      done
+      ;;
+    --upload-reports)
+      upload_reports_requested=1
+      shift
+
+      if [[ $# -eq 0 || "$1" == -* ]]; then
+        echo "Error: Option --upload-reports requires at least one report name." >&2
+        usage >&2
+        exit 2
+      fi
+
+      while [[ $# -gt 0 && "$1" != -* ]]; do
+        upload_report_names+=("$1")
+        shift
+      done
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Error: Unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+project_root="$(cd -- "$script_dir/.." && pwd)"
+env_file="$project_root/.env"
+
+if ! load_env_file "$env_file"; then
+  exit 1
+fi
+
+if ! check_healthchecks_env "$env_file"; then
+  exit 1
+fi
+
+trap 'handle_exit "$?"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+send_healthcheck_ping "/start"
+
+cd -- "$project_root" || exit 1
+
+generate_args=()
+upload_args=()
+
+if [[ $generate_reports_requested -eq 1 ]]; then
+  generate_args+=(--reports "${generate_report_names[@]}")
+fi
+
+if [[ $upload_reports_requested -eq 1 ]]; then
+  upload_args+=(--reports "${upload_report_names[@]}")
+fi
+
+if run_logged \
+  "shoutbomb-generate-reports" \
+  "$project_root/generate-reports" \
+  "${generate_args[@]}"; then
+  generation_status=0
+else
+  generation_status=$?
+fi
+
+if [[ $generation_status -ne 0 ]]; then
+  finish "$generation_status"
+fi
+
+if run_logged \
+  "shoutbomb-upload" \
+  "$project_root/upload" \
+  "${upload_args[@]}"; then
+  upload_status=0
+else
+  upload_status=$?
+fi
+
+finish "$upload_status"

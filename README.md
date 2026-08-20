@@ -12,6 +12,7 @@ Exports Sierra/PostgreSQL report data to CSV and can upload selected CSVs to Sho
 - [Common tasks](#common-tasks)
   - [Generate reports](#generate-reports)
   - [Upload reports](#upload-reports)
+  - [Run the monitored generate-and-upload workflow](#run-the-monitored-generate-and-upload-workflow)
   - [Archive old files](#archive-old-files)
   - [Show help](#show-help)
 - [Report inventory](#report-inventory)
@@ -32,6 +33,7 @@ If you are trying to find where something lives:
 | change report SQL | `sql/*.sql` |
 | generate CSVs from SQL | `./generate-reports` |
 | change upload behavior or destinations | `./upload` |
+| run or change the monitored cron workflow | `services/generate-and-upload` |
 | archive or prune old CSVs | `./archive-reports` |
 | inspect generated output | `data/` |
 | read project-specific caveats or history | `notes/` |
@@ -53,6 +55,7 @@ cp .env.example .env
 | --- | --- |
 | `./generate-reports` | Runs every `sql/*.sql` file by default and writes CSVs to `data/` |
 | `./upload` | Uploads the latest supported CSVs from `data/` to Shoutbomb |
+| `./services/generate-and-upload` | Runs the generate/upload cron workflow with logging and Healthchecks.io monitoring |
 | `./archive-reports` | Moves older CSVs from `data/` into `data/_archive/` and deletes sufficiently old archived CSVs |
 
 Typical workflow:
@@ -71,6 +74,8 @@ Typical workflow:
 ├── generate-reports
 ├── upload
 ├── archive-reports
+├── services/
+│   └── generate-and-upload
 ├── sql/
 ├── data/
 ├── notes/
@@ -88,6 +93,8 @@ You will need:
 - `sftp` on your `PATH`
 - network access to the PostgreSQL/Sierra database
 - SSH/SFTP access to the Shoutbomb server
+- `curl` for Healthchecks.io monitoring of the cron workflow
+- `/usr/bin/logger` for cron workflow logging
 - an SSH private key for uploads
 - a trusted SSH host key in `known_hosts` or an alternate `known_hosts` file
 
@@ -114,6 +121,10 @@ Then edit `.env` with real values.
 - `SSH_USERNAME`
 - `SSH_IDENTITY_FILE` (absolute path)
 
+#### Required for the monitored workflow
+
+- `HEALTHCHECKS_URL` (the full, private ping URL for the Healthchecks.io check)
+
 #### Optional for upload
 
 - `SSH_HOST` (defaults to `ftp.shoutbomb.com`)
@@ -128,6 +139,8 @@ PGPORT=5432
 PGDATABASE=database_name
 PGUSER=username
 PGPASSWORD=secret
+
+HEALTHCHECKS_URL=https://hc-ping.com/your-check-uuid
 
 SSH_HOST=ftp.shoutbomb.com
 SSH_PORT=22
@@ -197,6 +210,27 @@ Useful to know:
 - remote destination directories must already exist
 - not every generated report is uploadable; use the supported names above
 
+### Run the monitored generate-and-upload workflow
+
+Run the monitored generate-then-upload workflow used by cron:
+
+```bash
+./services/generate-and-upload \
+  --generate-reports holds overdue loanrules \
+  --upload-reports holds overdue
+```
+
+The generation and upload report lists are explicit and are passed unchanged to their corresponding scripts. This keeps `upload` as the canonical source for supported report names and preserves the existing cron behavior: `upload` runs only when `generate-reports` returns zero.
+
+The service also:
+
+- sends best-effort Healthchecks.io `/start`, success, and `/fail` pings in order, with short connection and request timeouts
+- logs command output under the existing `shoutbomb-generate-reports` and `shoutbomb-upload` tags
+- preserves command and logging pipeline exit statuses
+- resolves the project root from its own location, so cron does not need to set a working directory
+
+The service reads `HEALTHCHECKS_URL` from `.env`. Healthchecks.io connectivity and ping failures do not prevent the report scripts from running or alter their exit statuses, although each synchronous ping can add up to five seconds when the service is unreachable.
+
 ### Archive old files
 
 Archive active files older than 2 days and delete archived files older than 30 days:
@@ -224,6 +258,7 @@ Useful to know:
 ```bash
 ./generate-reports --help
 ./upload --help
+./services/generate-and-upload --help
 ./archive-reports --help
 ```
 
@@ -239,19 +274,19 @@ Useful to know:
 
 ## Cron structure
 
-A simple pattern is:
+The monitored service preserves the existing cron workflow:
 
-1. run `generate-reports`
-2. send its stdout/stderr to `logger`
-3. only if generation succeeds, run `upload`
-4. send upload logs to `logger`
+1. notify Healthchecks.io that the workflow is starting
+2. run `generate-reports` and send its stdout/stderr to `logger`
+3. only if generation succeeds, run `upload` with the configured upload reports and send its output to `logger`
+4. notify Healthchecks.io whether the complete workflow succeeded or failed
 5. run `archive-reports` later as a separate cron job
 
-Recommended cron template:
+Replacement cron line for the current generate/upload job:
 
 ```cron
-# Generate selected reports, then upload them only if generation succeeds.
-00 08 * * * /bin/bash -o pipefail -c '/opt/scripts/shoutbomb/generate-reports --reports holds overdue renew 2>&1 | /usr/bin/logger -t shoutbomb-generate-reports && /opt/scripts/shoutbomb/upload --reports holds overdue renew 2>&1 | /usr/bin/logger -t shoutbomb-upload'
+# Generate selected reports, then upload the configured reports only if generation succeeds.
+00 06,12,15 * * * /opt/scripts/shoutbomb/services/generate-and-upload --generate-reports holds overdue loanrules --upload-reports holds overdue
 
 # Archive/prune later, after any generate/upload workflow that still needs active files in data/.
 30 18 * * * /bin/bash -o pipefail -c '/opt/scripts/shoutbomb/archive-reports --archive 2 --delete-archived 30 2>&1 | /usr/bin/logger -t shoutbomb-archive-reports'
@@ -259,16 +294,19 @@ Recommended cron template:
 
 Why it is structured this way:
 
-- **absolute paths**: cron often runs with a minimal environment, so use full paths to scripts and `logger`
-- **`/bin/bash -o pipefail -c '...'`**: keeps the command failing if `generate-reports`, `upload`, or `archive-reports` fails, even though output is piped to `logger`
-- **`2>&1 | logger -t ...`**: sends both stdout and stderr into syslog under a predictable tag
-- **`&&` between generate and upload**: prevents upload from running when generation fails
+- **absolute path**: cron often runs with a minimal environment, so use the full path to the service
+- **service-managed logging**: the service preserves `pipefail` behavior and the existing `shoutbomb-generate-reports` and `shoutbomb-upload` logger tags
+- **separate report lists**: generation-only reports such as `loanrules` can be omitted explicitly from the upload list without duplicating `upload`'s supported-report mapping
+- **success gating**: the service preserves the existing behavior of skipping upload when generation returns non-zero
+- **best-effort monitoring**: ordered Healthchecks.io requests use short timeouts; failures do not prevent generation or upload from running and do not alter their exit statuses
 - **separate archive job**: avoids moving files out of `data/` before upload or review jobs are done
 
 More cron notes:
 
-- the scripts resolve `.env`, `sql/`, and `data/` relative to their own location, so a `cd` wrapper is not required
-- if you schedule multiple report groups, use one cron line per generate/upload workflow
+- replace every cron entry that directly runs `generate-reports` as part of a generate/upload workflow; preserve each entry's schedule and its separate generation and upload report lists
+- do not retain the old outer `/bin/bash`, `logger` pipelines, or `&&` chain around the monitored service because the service now handles them
+- the service and underlying scripts resolve project paths relative to their own locations, so cron does not need to set a working directory
+- if you schedule multiple report groups, use one service invocation per generate/upload workflow
 - keep archive/prune jobs later than any workflow that still expects the newest CSVs to remain in active `data/`
 
 ## Troubleshooting
@@ -330,6 +368,8 @@ If something is not working, check these first:
 - `SSH_KNOWN_HOSTS_FILE`, if set, is also an absolute, readable path
 - `psql` is installed and on `PATH`
 - `sftp` is installed and on `PATH`
+- `curl` is installed and on `PATH` for Healthchecks.io monitoring
+- `/usr/bin/logger` exists for monitored workflow logging
 - the latest expected CSV actually exists in `data/`
 - remote upload directories already exist
 - the host key is trusted, since strict host key checking is always enabled
@@ -339,6 +379,7 @@ Quick local help commands:
 ```bash
 ./generate-reports --help
 ./upload --help
+./services/generate-and-upload --help
 ./archive-reports --help
 ```
 
