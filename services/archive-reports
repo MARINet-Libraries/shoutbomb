@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -u
+set -o pipefail
+
+healthcheck_url_env=""
+archive_args=()
+
+usage() {
+  cat <<'EOF'
+Usage: ./services/archive-reports --healthcheck-url-env VARIABLE [--archive DAYS] [--delete-archived DAYS] [--dry-run] [--help]
+
+Runs archive-reports with its existing arguments, sends command output to logger
+using the shoutbomb-archive-reports tag, and notifies Healthchecks.io when the
+job starts and finishes. The service loads the selected Healthchecks.io URL
+from ./.env in the project root.
+
+Required service option:
+  --healthcheck-url-env VARIABLE  Name of a HEALTHCHECKS_*_URL variable in ./.env
+
+Archive options:
+  --archive DAYS                  Move eligible data/*.csv files to data/_archive/
+  --delete-archived DAYS          Delete eligible data/_archive/*.csv files
+  --dry-run                       Show what would happen without changing files
+  -h, --help                      Show this help text
+
+At least one archive operation is required for execution. Archive arguments are
+passed unchanged to archive-reports, which performs their validation.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --healthcheck-url-env)
+      if [[ $# -lt 2 || "$2" == -* ]]; then
+        echo "Error: Option $1 requires an environment variable name." >&2
+        usage >&2
+        exit 2
+      fi
+
+      if [[ -n "$healthcheck_url_env" ]]; then
+        echo "Error: Option $1 may only be specified once." >&2
+        usage >&2
+        exit 2
+      fi
+
+      healthcheck_url_env="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      archive_args+=("$@")
+      break
+      ;;
+    *)
+      archive_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$healthcheck_url_env" ]]; then
+  echo "Error: Required option --healthcheck-url-env was not provided." >&2
+  usage >&2
+  exit 2
+fi
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+project_root="$(cd -- "$script_dir/.." && pwd)"
+env_file="$project_root/.env"
+
+# shellcheck source=services/lib/monitored-job.sh
+. "$script_dir/lib/monitored-job.sh"
+
+if ! start_monitoring_from_env "$env_file" "$healthcheck_url_env"; then
+  exit 1
+fi
+
+cd -- "$project_root" || exit 1
+
+run_logged \
+  "shoutbomb-archive-reports" \
+  "$project_root/archive-reports" \
+  "${archive_args[@]}"
+archive_status=$?
+
+finish_monitoring "$archive_status"
