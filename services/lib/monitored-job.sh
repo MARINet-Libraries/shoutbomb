@@ -62,6 +62,7 @@ send_healthcheck_ping() {
     --connect-timeout 2 \
     --max-time 5 \
     --retry 5 \
+    --retry-max-time 30 \
     -o /dev/null \
     "${monitoring_healthchecks_url}${suffix}" \
     </dev/null >/dev/null 2>&1 || true
