@@ -61,6 +61,7 @@ send_healthcheck_ping() {
     -fsS \
     --connect-timeout 2 \
     --max-time 5 \
+    --retry 5 \
     -o /dev/null \
     "${monitoring_healthchecks_url}${suffix}" \
     </dev/null >/dev/null 2>&1 || true
