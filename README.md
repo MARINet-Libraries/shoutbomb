@@ -23,6 +23,7 @@ Exports Sierra/PostgreSQL report data to CSV and can upload selected CSVs to Sho
   - [Follow logs live](#follow-logs-live)
   - [Use journalctl on journald systems](#use-journalctl-on-journald-systems)
   - [Common failure points](#common-failure-points)
+- [Changelog and releases](#changelog-and-releases)
 - [Notes and caveats](#notes-and-caveats)
 
 ## Find the right file fast
@@ -37,6 +38,8 @@ If you are trying to find where something lives:
 | run or change monitored cron workflows | `services/` |
 | archive or prune old CSVs manually | `./archive-reports` |
 | run monitored archive maintenance | `services/archive-reports` |
+| change shared low-level shell helpers | `lib/common.sh` |
+| review implemented or release-ready changes | `CHANGELOG.md` |
 | run local static and mocked checks | `./check` and `tests/` |
 | inspect generated output | `data/` |
 | read project-specific caveats or history | `notes/` |
@@ -76,10 +79,13 @@ Typical workflow:
 ```text
 .
 ├── .env.example
+├── CHANGELOG.md
 ├── generate-reports
 ├── upload
 ├── archive-reports
 ├── check
+├── lib/
+│   └── common.sh
 ├── tests/
 ├── services/
 │   ├── generate-and-upload
@@ -466,6 +472,13 @@ Quick local help commands:
 ./archive-reports --help
 ./services/archive-reports --help
 ```
+
+## Changelog and releases
+
+Implemented changes are recorded newest-first under dated headings in
+`CHANGELOG.md`, using concise entries. Every release includes the updated
+changelog. Files under `notes/` remain point-in-time design and caveat context
+rather than release-history records.
 
 ## Notes and caveats
 

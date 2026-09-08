@@ -60,6 +60,23 @@ setup() {
   assert_call_count psql 0
 }
 
+@test "generate-reports reports shared environment-loading failures without running psql" {
+  run "$TEST_PROJECT/generate-reports" --reports holds
+
+  assert_status 1
+  assert_output_contains "Error: Environment file not found: $TEST_PROJECT/.env"
+  assert_output_contains "Create the file with PostgreSQL connection settings"
+  assert_call_count psql 0
+
+  printf '%s\n' 'false' > "$TEST_PROJECT/.env"
+
+  run "$TEST_PROJECT/generate-reports" --reports holds
+
+  assert_status 1
+  assert_output_contains "Error: Failed to load environment file: $TEST_PROJECT/.env"
+  assert_call_count psql 0
+}
+
 @test "generate-reports reports missing PostgreSQL settings without running psql" {
   cat > "$TEST_PROJECT/.env" <<'EOF'
 PGHOST=test-db.example

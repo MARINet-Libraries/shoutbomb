@@ -62,6 +62,23 @@ setup() {
   refute_output_contains "Overwriting archived file"
 }
 
+@test "archive-reports dry-run suppresses collisions cleared by planned deletions" {
+  create_report_file holds 1600000000 active-content
+  create_archived_report_file holds 1600000000 archived-content
+
+  run "$TEST_PROJECT/archive-reports" \
+    --dry-run \
+    --archive 0 \
+    --delete-archived 0
+
+  assert_status 0
+  assert_output_contains "Would delete archived file: data/_archive/holds-1600000000.csv"
+  assert_output_contains "Would archive: data/holds-1600000000.csv"
+  refute_output_contains "Overwriting archived file"
+  assert_file_content "$TEST_PROJECT/data/holds-1600000000.csv" "active-content"
+  assert_file_content "$TEST_PROJECT/data/_archive/holds-1600000000.csv" "archived-content"
+}
+
 @test "archive-reports warns and overwrites an archive collision" {
   create_report_file holds 1600000000 replacement
   create_archived_report_file holds 1600000000 original

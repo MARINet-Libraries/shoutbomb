@@ -64,20 +64,6 @@ validate_days_option() {
   fi
 }
 
-array_contains() {
-  local needle="$1"
-  shift
-  local value
-
-  for value in "$@"; do
-    if [[ "$value" == "$needle" ]]; then
-      return 0
-    fi
-  done
-
-  return 1
-}
-
 extract_epoch_from_basename() {
   local basename="$1"
 
@@ -210,7 +196,7 @@ process_archive_candidate() {
   destination_path="$archive_dir/$basename"
 
   if [[ -e "$destination_path" ]]; then
-    if [[ "$dry_run" -eq 1 ]] && array_contains "$destination_path" "${planned_deleted_paths[@]}"; then
+    if [[ "$dry_run" -eq 1 ]] && shoutbomb_array_contains "$destination_path" "${planned_deleted_paths[@]}"; then
       :
     else
       warn "Overwriting archived file: $(display_path "$destination_path")"
@@ -350,6 +336,10 @@ if [[ -n "$delete_archived_days" ]] && ! validate_days_option --delete-archived 
 fi
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=lib/common.sh
+. "$script_dir/lib/common.sh"
+
 data_dir="$script_dir/data"
 archive_dir="$data_dir/_archive"
 now="$(date +%s 2>/dev/null)"
