@@ -61,6 +61,8 @@ send_healthcheck_ping() {
     -fsS \
     --connect-timeout 2 \
     --max-time 5 \
+    --retry 5 \
+    --retry-max-time 30 \
     -o /dev/null \
     "${monitoring_healthchecks_url}${suffix}" \
     </dev/null >/dev/null 2>&1 || true
@@ -123,7 +125,8 @@ start_monitoring_from_env() {
 
 run_logged() {
   local tag="$1"
+  local logger_path="${SHOUTBOMB_LOGGER_PATH:-/usr/bin/logger}"
   shift
 
-  "$@" 2>&1 | /usr/bin/logger -t "$tag"
+  "$@" 2>&1 | "$logger_path" -t "$tag"
 }

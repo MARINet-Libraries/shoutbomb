@@ -20,6 +20,9 @@ The service loads the selected Healthchecks.io URL from ./.env in the project ro
 Required service option:
   --healthcheck-url-env VARIABLE   Name of a HEALTHCHECKS_*_URL variable in ./.env
 
+Optional service setting:
+  SHOUTBOMB_LOGGER_PATH            Logger executable path (default: /usr/bin/logger)
+
 Workflow options:
   --generate-reports REPORT [...]  Reports to pass to generate-reports
   --upload-reports REPORT [...]    Reports to pass to upload

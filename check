@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -u
+set -o pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: ./check [--help]
+
+Runs the local static checks and fully mocked Bats test suite.
+No live PostgreSQL, SFTP, syslog, or Healthchecks.io access is required.
+
+Required test tools:
+  bats        Bats-core test runner
+  shellcheck  Shell static analyzer
+
+Options:
+  -h, --help  Show this help text
+EOF
+}
+
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    -h|--help)
+      if [[ $# -ne 1 ]]; then
+        echo "Error: Unexpected arguments: ${*:2}" >&2
+        usage >&2
+        exit 2
+      fi
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Error: Unexpected argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+fi
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+entrypoints=(
+  generate-reports
+  upload
+  archive-reports
+  services/generate-and-upload
+  services/archive-reports
+)
+
+shell_files=(
+  check
+  "${entrypoints[@]}"
+  services/lib/monitored-job.sh
+  tests/test_helper.bash
+  tests/mocks/curl
+  tests/mocks/date
+  tests/mocks/logger
+  tests/mocks/mock-lib.bash
+  tests/mocks/psql
+  tests/mocks/sftp
+  tests/mocks/workflow-command
+)
+
+printf '%s\n' 'Running Bash syntax checks...'
+for file in "${shell_files[@]}"; do
+  bash -n "$script_dir/$file" || exit 1
+done
+
+missing_tools=()
+for tool in shellcheck bats; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    missing_tools+=("$tool")
+  fi
+done
+
+if [[ ${#missing_tools[@]} -ne 0 ]]; then
+  printf 'Error: Missing required test tool(s): %s\n' "${missing_tools[*]}" >&2
+  cat >&2 <<'EOF'
+
+Install them with the operating-system package manager.
+
+FreeBSD:
+  sudo pkg install bats-core hs-ShellCheck
+
+Ubuntu 24.04:
+  sudo apt install bats shellcheck
+EOF
+  exit 127
+fi
+
+printf '%s\n' 'Running ShellCheck...'
+(
+  cd -- "$script_dir" || exit 1
+  shellcheck -x "${shell_files[@]}"
+) || exit 1
+
+printf '%s\n' 'Running Bats tests...'
+bats "$script_dir/tests"
