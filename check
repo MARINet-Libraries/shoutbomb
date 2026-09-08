@@ -50,6 +50,7 @@ entrypoints=(
 shell_files=(
   check
   "${entrypoints[@]}"
+  lib/common.sh
   services/lib/monitored-job.sh
   tests/test_helper.bash
   tests/mocks/curl

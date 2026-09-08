@@ -13,6 +13,7 @@ setup_project_fixture() {
 
   mkdir -p -- \
     "$TEST_PROJECT/data/_archive" \
+    "$TEST_PROJECT/lib" \
     "$TEST_PROJECT/sql" \
     "$TEST_PROJECT/services/lib" \
     "$TEST_OUTSIDE_DIR" \
@@ -23,6 +24,7 @@ setup_project_fixture() {
   cp -- "$TEST_SOURCE_ROOT/generate-reports" "$TEST_PROJECT/generate-reports"
   cp -- "$TEST_SOURCE_ROOT/upload" "$TEST_PROJECT/upload"
   cp -- "$TEST_SOURCE_ROOT/archive-reports" "$TEST_PROJECT/archive-reports"
+  cp -- "$TEST_SOURCE_ROOT/lib/common.sh" "$TEST_PROJECT/lib/common.sh"
   cp -- "$TEST_SOURCE_ROOT/services/generate-and-upload" "$TEST_PROJECT/services/generate-and-upload"
   cp -- "$TEST_SOURCE_ROOT/services/archive-reports" "$TEST_PROJECT/services/archive-reports"
   cp -- "$TEST_SOURCE_ROOT/services/lib/monitored-job.sh" "$TEST_PROJECT/services/lib/monitored-job.sh"

@@ -1,33 +1,13 @@
 #!/usr/bin/env bash
 
+monitored_job_library_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=lib/common.sh
+. "$monitored_job_library_dir/../../lib/common.sh"
+unset monitored_job_library_dir
+
 monitoring_finished=0
 monitoring_healthchecks_url=""
-
-load_env_file() {
-  local env_file="$1"
-  local source_status
-
-  if [[ ! -f "$env_file" ]]; then
-    echo "Error: Environment file not found: $env_file" >&2
-    return 1
-  fi
-
-  if [[ ! -r "$env_file" ]]; then
-    echo "Error: Environment file is not readable: $env_file" >&2
-    return 1
-  fi
-
-  set -a
-  # shellcheck disable=SC1090
-  . "$env_file"
-  source_status=$?
-  set +a
-
-  if [[ $source_status -ne 0 ]]; then
-    echo "Error: Failed to load environment file: $env_file" >&2
-    return 1
-  fi
-}
 
 resolve_healthchecks_url() {
   local env_file="$1"
@@ -112,7 +92,7 @@ start_monitoring_from_env() {
   local variable_name="$2"
   local healthchecks_url
 
-  if ! load_env_file "$env_file"; then
+  if ! shoutbomb_load_env "$env_file"; then
     return 1
   fi
 

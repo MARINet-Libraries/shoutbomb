@@ -19,12 +19,14 @@ Options:
 EOF
 }
 
-load_env_file() {
+load_pg_env() {
   local env_file="$1"
-  local source_status
+
+  if shoutbomb_load_env "$env_file"; then
+    return 0
+  fi
 
   if [[ ! -f "$env_file" ]]; then
-    echo "Error: Environment file not found: $env_file" >&2
     cat >&2 <<'EOF'
 
 Create the file with PostgreSQL connection settings, for example:
@@ -34,37 +36,17 @@ Create the file with PostgreSQL connection settings, for example:
   PGUSER=username
   PGPASSWORD=secret
 EOF
-    return 1
   fi
 
-  if [[ ! -r "$env_file" ]]; then
-    echo "Error: Environment file is not readable: $env_file" >&2
-    return 1
-  fi
-
-  set -a
-  # shellcheck disable=SC1090
-  . "$env_file"
-  source_status=$?
-  set +a
-
-  if [[ $source_status -ne 0 ]]; then
-    echo "Error: Failed to load environment file: $env_file" >&2
-    return 1
-  fi
+  return 1
 }
 
 check_pg_env() {
   local env_file="$1"
   local required_vars=(PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD)
   local missing_vars=()
-  local var
 
-  for var in "${required_vars[@]}"; do
-    if [[ -z "${!var:-}" ]]; then
-      missing_vars+=("$var")
-    fi
-  done
+  shoutbomb_collect_missing_vars missing_vars "${required_vars[@]}"
 
   if [[ ${#missing_vars[@]} -ne 0 ]]; then
     echo "Error: Missing required PostgreSQL settings in $env_file:" >&2
@@ -82,20 +64,6 @@ EOF
   fi
 }
 
-array_contains() {
-  local needle="$1"
-  shift
-  local value
-
-  for value in "$@"; do
-    if [[ "$value" == "$needle" ]]; then
-      return 0
-    fi
-  done
-
-  return 1
-}
-
 print_valid_reports() {
   local report_name
 
@@ -110,7 +78,7 @@ validate_requested_reports() {
   local report_name
 
   for report_name in "${requested_reports[@]}"; do
-    if ! array_contains "$report_name" "${available_report_names[@]}"; then
+    if ! shoutbomb_array_contains "$report_name" "${available_report_names[@]}"; then
       invalid_reports+=("$report_name")
     fi
   done
@@ -165,6 +133,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=lib/common.sh
+. "$script_dir/lib/common.sh"
+
 env_file="$script_dir/.env"
 sql_dir="$script_dir/sql"
 data_dir="$script_dir/data"
@@ -197,7 +169,7 @@ else
   for sql_file in "${sql_files[@]}"; do
     report_name="$(basename "$sql_file" .sql)"
 
-    if array_contains "$report_name" "${requested_reports[@]}"; then
+    if shoutbomb_array_contains "$report_name" "${requested_reports[@]}"; then
       selected_sql_files+=("$sql_file")
     fi
   done
@@ -208,7 +180,7 @@ if ! command -v psql >/dev/null 2>&1; then
   exit 127
 fi
 
-if ! load_env_file "$env_file"; then
+if ! load_pg_env "$env_file"; then
   exit 1
 fi
 

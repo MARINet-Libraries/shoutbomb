@@ -34,12 +34,14 @@ Options:
 EOF
 }
 
-load_env_file() {
+load_ssh_env() {
   local env_file="$1"
-  local source_status
+
+  if shoutbomb_load_env "$env_file"; then
+    return 0
+  fi
 
   if [[ ! -f "$env_file" ]]; then
-    echo "Error: Environment file not found: $env_file" >&2
     cat >&2 <<'EOF'
 
 Create the file with SSH/SFTP settings, for example:
@@ -52,24 +54,9 @@ Create the file with SSH/SFTP settings, for example:
 
 SSH_IDENTITY_FILE and SSH_KNOWN_HOSTS_FILE must use absolute paths.
 EOF
-    return 1
   fi
 
-  if [[ ! -r "$env_file" ]]; then
-    echo "Error: Environment file is not readable: $env_file" >&2
-    return 1
-  fi
-
-  set -a
-  # shellcheck disable=SC1090
-  . "$env_file"
-  source_status=$?
-  set +a
-
-  if [[ $source_status -ne 0 ]]; then
-    echo "Error: Failed to load environment file: $env_file" >&2
-    return 1
-  fi
+  return 1
 }
 
 check_absolute_path() {
@@ -101,13 +88,8 @@ check_ssh_env() {
   local env_file="$1"
   local required_vars=(SSH_USERNAME SSH_IDENTITY_FILE)
   local missing_vars=()
-  local var
 
-  for var in "${required_vars[@]}"; do
-    if [[ -z "${!var:-}" ]]; then
-      missing_vars+=("$var")
-    fi
-  done
+  shoutbomb_collect_missing_vars missing_vars "${required_vars[@]}"
 
   if [[ ${#missing_vars[@]} -ne 0 ]]; then
     echo "Error: Missing required SSH/SFTP settings in $env_file:" >&2
@@ -220,20 +202,6 @@ upload_file() {
     "$(sftp_quote "$remote_file")" | sftp "${sftp_args[@]}" "$target"
 }
 
-array_contains() {
-  local needle="$1"
-  shift
-  local value
-
-  for value in "$@"; do
-    if [[ "$value" == "$needle" ]]; then
-      return 0
-    fi
-  done
-
-  return 1
-}
-
 print_valid_reports() {
   local report_name
 
@@ -248,7 +216,7 @@ validate_requested_reports() {
   local report_name
 
   for report_name in "${requested_reports[@]}"; do
-    if ! array_contains "$report_name" "${supported_report_names[@]}"; then
+    if ! shoutbomb_array_contains "$report_name" "${supported_report_names[@]}"; then
       invalid_reports+=("$report_name")
     fi
   done
@@ -344,6 +312,11 @@ if [[ $# -gt 0 ]]; then
   exit 1
 fi
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=lib/common.sh
+. "$script_dir/lib/common.sh"
+
 if [[ ${#requested_reports[@]} -eq 0 ]]; then
   selected_reports=("${reports[@]}")
 else
@@ -354,13 +327,12 @@ else
   for report in "${reports[@]}"; do
     report_name="${report%%:*}"
 
-    if array_contains "$report_name" "${requested_reports[@]}"; then
+    if shoutbomb_array_contains "$report_name" "${requested_reports[@]}"; then
       selected_reports+=("$report")
     fi
   done
 fi
 
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 env_file="$script_dir/.env"
 data_dir="$script_dir/data"
 
@@ -369,7 +341,7 @@ if ! command -v sftp >/dev/null 2>&1; then
   exit 127
 fi
 
-if ! load_env_file "$env_file"; then
+if ! load_ssh_env "$env_file"; then
   exit 1
 fi
 
