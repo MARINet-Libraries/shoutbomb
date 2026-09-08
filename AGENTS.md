@@ -5,6 +5,7 @@
 - `sql/*.sql`: standalone Sierra/PostgreSQL report queries.
 - `generate-reports`, `upload`, `archive-reports`: canonical CSV export, SFTP upload, and retention entrypoints.
 - `services/`: monitored cron entrypoints; both use `services/lib/monitored-job.sh`.
+- `check` and `tests/`: canonical local static checks and fully mocked Bats behavior tests.
 - `notes/`: caveats, history, and deferred designs. Check note status/date against current code.
 - `data/` and `data/_archive/`: generated artifacts, never source-of-truth logic.
 - `.env.example`: configuration template; the real ignored `.env` may contain secrets.
@@ -15,6 +16,7 @@
 - Assume no live PostgreSQL/Sierra, SSH/SFTP, remote server, or Healthchecks.io access. Never claim query, upload, or monitoring validation unless performed.
 - Scripts needing configuration resolve the project-root `.env` from their own location. Do not inspect, modify, or commit it unless explicitly requested.
 - Never add real secrets or private values to `.env.example`, code, docs, or logs. Preserve intentional public defaults; otherwise use placeholders and `.env` settings.
+- Tests must use temporary project fixtures and fake configuration; never let routine tests read the real `.env`, inspect working CSVs, write to real syslog, or contact live services.
 - Preserve report, output, upload, retention, and monitoring behavior unless the task requests a change.
 - Do not inspect generated CSVs unless the task concerns output. Do not run non-dry-run retention merely for validation.
 
@@ -48,6 +50,8 @@
   for f in generate-reports upload archive-reports services/generate-and-upload services/archive-reports; do "./$f" --help >/dev/null; done
   ```
 
+- With Bats-core and ShellCheck installed, also run `./check` after shell or test changes.
+
 ## Operational contracts
 
 ### Reports
@@ -65,7 +69,7 @@
 
 - `services/generate-and-upload` uploads only after successful generation; generation/upload lists are independent pass-through arguments. `services/archive-reports` passes retention arguments through.
 - Each invocation requires `--healthcheck-url-env HEALTHCHECKS_*_URL`; keep the private URL out of arguments and logs.
-- Preserve logger tags `shoutbomb-generate-reports`, `shoutbomb-upload`, and `shoutbomb-archive-reports`; do not add duplicate logger wrappers to cron examples.
+- Preserve logger tags `shoutbomb-generate-reports`, `shoutbomb-upload`, and `shoutbomb-archive-reports`; do not add duplicate logger wrappers to cron examples. `SHOUTBOMB_LOGGER_PATH` defaults to `/usr/bin/logger` and exists so isolated tests can substitute a fake logger.
 - Healthchecks.io lifecycle pings are best-effort and never replace workflow status. Shared-helper changes require validating both services.
 
 ## Changes to call out
@@ -74,6 +78,6 @@ Explicitly identify changes to output schema/rows/order, report names/files/time
 
 ## Validation limits
 
-- Local validation may cover syntax, help, arguments, isolated filesystems, and mocked commands.
+- Local validation may cover syntax, help, arguments, isolated filesystems, and mocked commands. `./check` is the canonical local entrypoint.
 - Live query, upload, and monitoring checks require their respective environments and credentials. Never ping production checks during routine tests.
 - State exactly what ran; distinguish static/mocked checks from live integration validation.

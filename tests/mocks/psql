@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -u
+
+mock_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tests/mocks/mock-lib.bash
+. "$mock_dir/mock-lib.bash"
+
+call_dir="$(mock_begin_call psql)"
+mock_record_args "$call_dir/args" "$@"
+
+sql_file=""
+expect_file=0
+for argument in "$@"; do
+  if [[ $expect_file -eq 1 ]]; then
+    sql_file="$argument"
+    expect_file=0
+    continue
+  fi
+
+  case "$argument" in
+    --file)
+      expect_file=1
+      ;;
+    --file=*)
+      sql_file="${argument#--file=}"
+      ;;
+  esac
+done
+
+if [[ -z "$sql_file" ]]; then
+  echo "Mock psql expected a --file argument." >&2
+  exit 64
+fi
+
+report_name="$(basename -- "$sql_file" .sql)"
+printf '%s\n' "$report_name" >> "$MOCK_STATE_DIR/psql/reports"
+{
+  printf 'PGHOST=%s\n' "${PGHOST-}"
+  printf 'PGPORT=%s\n' "${PGPORT-}"
+  printf 'PGDATABASE=%s\n' "${PGDATABASE-}"
+  printf 'PGUSER=%s\n' "${PGUSER-}"
+  printf 'PGPASSWORD=%s\n' "${PGPASSWORD-}"
+} > "$call_dir/environment"
+
+if mock_list_contains "${MOCK_PSQL_FAIL_REPORTS:-}" "$report_name"; then
+  printf 'partial output for %s\n' "$report_name"
+  exit "${MOCK_PSQL_FAILURE_STATUS:-42}"
+fi
+
+printf 'header_%s\nvalue_%s\n' "$report_name" "$report_name"

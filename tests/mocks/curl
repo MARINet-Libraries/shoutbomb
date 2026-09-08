@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -u
+
+mock_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tests/mocks/mock-lib.bash
+. "$mock_dir/mock-lib.bash"
+
+call_dir="$(mock_begin_call curl)"
+mock_record_args "$call_dir/args" "$@"
+
+url=""
+if [[ $# -gt 0 ]]; then
+  url="${!#}"
+fi
+printf '%s\n' "$url" > "$call_dir/url"
+printf '%s\n' "$url" >> "$MOCK_STATE_DIR/curl/urls"
+
+exit "${MOCK_CURL_STATUS:-0}"

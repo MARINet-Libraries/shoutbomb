@@ -39,7 +39,7 @@ display_path() {
   local path="$1"
 
   if [[ "$path" == "$script_dir/"* ]]; then
-    printf '%s\n' "${path#$script_dir/}"
+    printf '%s\n' "${path#"$script_dir"/}"
   else
     printf '%s\n' "$path"
   fi

@@ -15,6 +15,7 @@ Exports Sierra/PostgreSQL report data to CSV and can upload selected CSVs to Sho
   - [Run the monitored generate-and-upload workflow](#run-the-monitored-generate-and-upload-workflow)
   - [Archive old files](#archive-old-files)
   - [Show help](#show-help)
+- [Local validation and tests](#local-validation-and-tests)
 - [Report inventory](#report-inventory)
 - [Cron structure](#cron-structure)
 - [Troubleshooting](#troubleshooting)
@@ -36,6 +37,7 @@ If you are trying to find where something lives:
 | run or change monitored cron workflows | `services/` |
 | archive or prune old CSVs manually | `./archive-reports` |
 | run monitored archive maintenance | `services/archive-reports` |
+| run local static and mocked checks | `./check` and `tests/` |
 | inspect generated output | `data/` |
 | read project-specific caveats or history | `notes/` |
 | copy a starter config | `.env.example` |
@@ -59,6 +61,7 @@ cp .env.example .env
 | `./services/generate-and-upload` | Runs a generate/upload cron workflow with logging and Healthchecks.io monitoring |
 | `./archive-reports` | Moves older CSVs from `data/` into `data/_archive/` and deletes sufficiently old archived CSVs |
 | `./services/archive-reports` | Runs archive maintenance with logging and Healthchecks.io monitoring |
+| `./check` | Runs Bash syntax checks, ShellCheck, and fully mocked Bats behavior tests, including help smoke tests |
 
 Typical workflow:
 
@@ -76,6 +79,8 @@ Typical workflow:
 ├── generate-reports
 ├── upload
 ├── archive-reports
+├── check
+├── tests/
 ├── services/
 │   ├── generate-and-upload
 │   ├── archive-reports
@@ -99,7 +104,7 @@ You will need:
 - network access to the PostgreSQL/Sierra database
 - SSH/SFTP access to the Shoutbomb server
 - `curl` for Healthchecks.io monitoring of the cron workflow
-- `/usr/bin/logger` for cron workflow logging
+- `/usr/bin/logger` for cron workflow logging, unless `SHOUTBOMB_LOGGER_PATH` selects another executable
 - an SSH private key for uploads
 - a trusted SSH host key in `known_hosts` or an alternate `known_hosts` file
 
@@ -136,6 +141,10 @@ For example:
 - `HEALTHCHECKS_RENEWALS_URL`
 - `HEALTHCHECKS_ARCHIVE_URL`
 
+#### Optional for monitored service jobs
+
+- `SHOUTBOMB_LOGGER_PATH` (defaults to `/usr/bin/logger`; primarily useful for isolated tests)
+
 #### Optional for upload
 
 - `SSH_HOST` (defaults to `ftp.shoutbomb.com`)
@@ -154,6 +163,9 @@ PGPASSWORD=secret
 HEALTHCHECKS_PRIMARY_REPORTS_URL=https://hc-ping.com/your-primary-reports-check-uuid
 HEALTHCHECKS_RENEWALS_URL=https://hc-ping.com/your-renewals-check-uuid
 HEALTHCHECKS_ARCHIVE_URL=https://hc-ping.com/your-archive-check-uuid
+
+# Optional; monitored services default to /usr/bin/logger:
+# SHOUTBOMB_LOGGER_PATH=/usr/bin/logger
 
 SSH_HOST=ftp.shoutbomb.com
 SSH_PORT=22
@@ -252,6 +264,8 @@ The service also:
 - preserves command and logging pipeline exit statuses
 - resolves the project root from its own location, so cron does not need to set a working directory
 
+The logger executable defaults to `/usr/bin/logger`. `SHOUTBOMB_LOGGER_PATH` can select a substitute executable without changing the default; this is primarily a test seam for keeping mocked service tests out of the real system log.
+
 `--healthcheck-url-env` is required and must name a non-empty `HEALTHCHECKS_*_URL` variable in `.env`. The URL itself is not passed on the command line or written to logs. Healthchecks.io connectivity and ping failures do not prevent the report scripts from running or alter their exit statuses, although each synchronous ping can add up to five seconds when the service is unreachable.
 
 ### Archive old files
@@ -295,7 +309,36 @@ Useful to know:
 ./services/generate-and-upload --help
 ./archive-reports --help
 ./services/archive-reports --help
+./check --help
 ```
+
+## Local validation and tests
+
+Install the local test dependencies with the operating-system package manager.
+
+FreeBSD:
+
+```bash
+sudo pkg install bats-core hs-ShellCheck
+```
+
+Ubuntu 24.04:
+
+```bash
+sudo apt install bats shellcheck
+```
+
+Then run the canonical local check:
+
+```bash
+./check
+```
+
+`./check` runs Bash syntax checks, ShellCheck, and the Bats suite under `tests/`, including help smoke tests. Behavioral tests create isolated temporary project trees and use generated fixtures plus fake `psql`, `sftp`, `curl`, `date`, workflow commands, and logger executables. They do not read the project `.env`, inspect working CSV artifacts, contact external services, write to the real system log, or require secrets.
+
+The mocked `psql` tests validate report discovery, arguments, output-file handling, and failure behavior; they do not execute or prove the semantics of the production Sierra SQL. Live PostgreSQL/Sierra query, SFTP upload, and Healthchecks.io validation remain separate operational checks.
+
+Known CLI differences are preserved by characterization tests and should be normalized separately rather than incidentally during test maintenance.
 
 ## Report inventory
 

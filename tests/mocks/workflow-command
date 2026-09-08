@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -u
+
+: "${MOCK_STATE_DIR:?MOCK_STATE_DIR must be set}"
+
+command_name="${0##*/}"
+workflow_dir="$MOCK_STATE_DIR/workflow"
+mkdir -p -- "$workflow_dir"
+
+count=0
+if [[ -f "$workflow_dir/count" ]]; then
+  IFS= read -r count < "$workflow_dir/count"
+fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$workflow_dir/count"
+
+call_dir="$workflow_dir/$count"
+mkdir -p -- "$call_dir"
+printf '%s\n' "$command_name" > "$call_dir/command"
+printf '%s\n' "$PWD" > "$call_dir/cwd"
+printf '%s\n' "$@" > "$call_dir/args"
+
+{
+  printf '%s' "$command_name"
+  for argument in "$@"; do
+    printf '\t%s' "$argument"
+  done
+  printf '\n'
+} >> "$workflow_dir/calls"
+
+printf 'mock output from %s\n' "$command_name"
+
+case "$command_name" in
+  generate-reports)
+    exit "${MOCK_GENERATE_REPORTS_STATUS:-0}"
+    ;;
+  upload)
+    exit "${MOCK_UPLOAD_STATUS:-0}"
+    ;;
+  archive-reports)
+    exit "${MOCK_ARCHIVE_REPORTS_STATUS:-0}"
+    ;;
+  *)
+    echo "Unexpected workflow command name: $command_name" >&2
+    exit 64
+    ;;
+esac

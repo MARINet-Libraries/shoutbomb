@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -u
+
+mock_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tests/mocks/mock-lib.bash
+. "$mock_dir/mock-lib.bash"
+
+call_dir="$(mock_begin_call sftp)"
+mock_record_args "$call_dir/args" "$@"
+cat > "$call_dir/stdin"
+
+{
+  printf '%s\n' "--- call $(basename -- "$call_dir") args ---"
+  printf '%s\n' "$@"
+  printf '%s\n' "--- stdin ---"
+  cat "$call_dir/stdin"
+} >> "$MOCK_STATE_DIR/sftp/transcript"
+
+failure_match="${MOCK_SFTP_FAIL_MATCH:-}"
+if [[ -n "$failure_match" ]]; then
+  arguments="$(printf '%s\n' "$@")"
+  input="$(cat "$call_dir/stdin")"
+
+  if [[ "$arguments" == *"$failure_match"* || "$input" == *"$failure_match"* ]]; then
+    exit "${MOCK_SFTP_FAILURE_STATUS:-23}"
+  fi
+fi
+
+printf '%s\n' 'Mock sftp upload complete.'

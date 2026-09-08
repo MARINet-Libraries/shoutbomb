@@ -194,8 +194,10 @@ sftp_quote() {
 upload_file() {
   local local_file="$1"
   local remote_dir="$2"
-  local remote_file="${remote_dir%/}/$(basename "$local_file")"
+  local remote_file
   local target="${SSH_USERNAME}@${HOST}"
+
+  remote_file="${remote_dir%/}/$(basename "$local_file")"
   local sftp_args=(
     -b -
     -P "$PORT"

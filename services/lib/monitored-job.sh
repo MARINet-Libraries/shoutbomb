@@ -125,7 +125,8 @@ start_monitoring_from_env() {
 
 run_logged() {
   local tag="$1"
+  local logger_path="${SHOUTBOMB_LOGGER_PATH:-/usr/bin/logger}"
   shift
 
-  "$@" 2>&1 | /usr/bin/logger -t "$tag"
+  "$@" 2>&1 | "$logger_path" -t "$tag"
 }

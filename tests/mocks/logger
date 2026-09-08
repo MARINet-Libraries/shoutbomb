@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -u
+
+mock_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tests/mocks/mock-lib.bash
+. "$mock_dir/mock-lib.bash"
+
+call_dir="$(mock_begin_call logger)"
+mock_record_args "$call_dir/args" "$@"
+cat > "$call_dir/stdin"
+
+tag=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -t)
+      if [[ $# -lt 2 ]]; then
+        exit 64
+      fi
+      tag="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+printf '%s\n' "$tag" > "$call_dir/tag"
+printf '%s\n' "$tag" >> "$MOCK_STATE_DIR/logger/tags"
+
+if [[ -n "${MOCK_LOGGER_FAIL_TAG:-}" && "$tag" == "$MOCK_LOGGER_FAIL_TAG" ]]; then
+  exit "${MOCK_LOGGER_FAILURE_STATUS:-24}"
+fi
+
+exit "${MOCK_LOGGER_STATUS:-0}"

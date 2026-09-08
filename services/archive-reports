@@ -17,6 +17,9 @@ from ./.env in the project root.
 Required service option:
   --healthcheck-url-env VARIABLE  Name of a HEALTHCHECKS_*_URL variable in ./.env
 
+Optional service setting:
+  SHOUTBOMB_LOGGER_PATH           Logger executable path (default: /usr/bin/logger)
+
 Archive options:
   --archive DAYS                  Move eligible data/*.csv files to data/_archive/
   --delete-archived DAYS          Delete eligible data/_archive/*.csv files
