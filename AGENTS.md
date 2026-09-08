@@ -2,14 +2,22 @@
 
 ## Project map and upkeep
 
+- `CHANGELOG.md`: concise, date-ordered record of implemented changes; keep it current as changes land and include it in every release.
 - `sql/*.sql`: standalone Sierra/PostgreSQL report queries.
 - `generate-reports`, `upload`, `archive-reports`: canonical CSV export, SFTP upload, and retention entrypoints.
+- `lib/common.sh`: narrow namespaced helpers for `.env` loading, array membership, and missing-variable collection; keep domain validation in its owning scripts.
 - `services/`: monitored cron entrypoints; both use `services/lib/monitored-job.sh`.
 - `check` and `tests/`: canonical local static checks and fully mocked Bats behavior tests.
-- `notes/`: caveats, history, and deferred designs. Check note status/date against current code.
+- `notes/`: point-in-time caveats, history, and deferred designs. Check their status/date against current code and `CHANGELOG.md`.
 - `data/` and `data/_archive/`: generated artifacts, never source-of-truth logic.
 - `.env.example`: configuration template; the real ignored `.env` may contain secrets.
 - Keep this file current when layout, interfaces, configuration, validation, or workflows change. Document implemented behavior, not proposals.
+
+## Changelog and releases
+
+- Before completing an implementation task, ensure every notable change is recorded under a `## YYYY-MM-DD` heading in `CHANGELOG.md`; add the current date at the top when needed and do not add proposals.
+- Keep each change to a concise bullet of no more than a couple of sentences, with the newest dates first, and include the updated changelog in every release.
+- Do not edit dated files under `notes/` solely to record implementation status or release history. Update a note only when its design or caveat content itself changes.
 
 ## Guardrails
 
@@ -35,7 +43,7 @@
 - Follow nearby style: uppercase keywords, clear joins/aliases, and one selected expression per line when practical.
 - Preserve column names/order, filtering, aggregation, and sorting unless requested; use explicit `ORDER BY` when determinism matters.
 - For `overdue.sql` or `renew.sql`, first read `notes/hold-count-aggregation-issue.md`. For due-window changes, also read the applicable `notes/*-window-change-2026-04-29.md`. For broader refactors, check `notes/sql-query-review-2026-04-24.md` against current SQL.
-- Call out semantic changes and document non-trivial downstream impact in `notes/`.
+- Record SQL semantic and downstream-impact changes in `CHANGELOG.md`; update a note only when its active caveat or design guidance changes.
 
 ## Shell changes
 
@@ -46,7 +54,7 @@
 - After shell changes, run:
 
   ```bash
-  for f in generate-reports upload archive-reports services/generate-and-upload services/archive-reports services/lib/monitored-job.sh; do bash -n "$f"; done
+  for f in generate-reports upload archive-reports lib/common.sh services/generate-and-upload services/archive-reports services/lib/monitored-job.sh; do bash -n "$f"; done
   for f in generate-reports upload archive-reports services/generate-and-upload services/archive-reports; do "./$f" --help >/dev/null; done
   ```
 
@@ -57,7 +65,7 @@
 ### Reports
 
 - A SQL basename is its CLI report name and generated filename prefix. Generation auto-discovers reports; upload support is explicit.
-- When adding/removing/renaming reports, update `upload` if applicable, help text, the `README.md` inventory, relevant notes, and documented service/cron lists. Keep generation-only reports out of upload lists.
+- When adding/removing/renaming reports, update `upload` if applicable, help text, the `README.md` inventory, `CHANGELOG.md`, and documented service/cron lists. Keep generation-only reports out of upload lists.
 
 ### Retention
 
@@ -74,7 +82,7 @@
 
 ## Changes to call out
 
-Explicitly identify changes to output schema/rows/order, report names/files/timestamps/headers, upload selection/support/destinations, retention semantics, CLI/config/exit behavior, logger tags, monitoring lifecycle, or generation-to-upload gating. Update `README.md`, `.env.example`, and/or `notes/` wherever their contract changes.
+Explicitly identify changes to output schema/rows/order, report names/files/timestamps/headers, upload selection/support/destinations, retention semantics, CLI/config/exit behavior, logger tags, monitoring lifecycle, or generation-to-upload gating. Record implemented changes in `CHANGELOG.md`; update `README.md` and `.env.example` wherever their documented contracts change.
 
 ## Validation limits
 
