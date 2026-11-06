@@ -16,14 +16,42 @@ cat > "$call_dir/stdin"
   cat "$call_dir/stdin"
 } >> "$MOCK_STATE_DIR/sftp/transcript"
 
+input="$(cat "$call_dir/stdin")"
+get_pattern='^@get "(/monthly_report/[^"]+)" "(.*)"$'
+download_target=""
+if [[ "$input" =~ $get_pattern ]]; then
+  remote_name="${BASH_REMATCH[1]##*/}"
+  download_target="${BASH_REMATCH[2]}"
+  download_target="${download_target//\\\"/\"}"
+  download_target="${download_target//\\\\/\\}"
+  # A completed CSV must not be visible while the transfer is in progress.
+  final_target="$(dirname -- "$(dirname -- "$download_target")")/$remote_name"
+  if [[ -e "$final_target" ]]; then
+    echo "Mock detected premature publication: $final_target" >&2
+    exit 99
+  fi
+  printf 'partial download\n' > "$download_target"
+  if [[ "${MOCK_SFTP_INTERRUPT_DOWNLOAD:-0}" == 1 ]]; then
+    kill -TERM "$PPID"
+    exit 143
+  fi
+fi
+
 failure_match="${MOCK_SFTP_FAIL_MATCH:-}"
 if [[ -n "$failure_match" ]]; then
   arguments="$(printf '%s\n' "$@")"
-  input="$(cat "$call_dir/stdin")"
 
   if [[ "$arguments" == *"$failure_match"* || "$input" == *"$failure_match"* ]]; then
     exit "${MOCK_SFTP_FAILURE_STATUS:-23}"
   fi
 fi
 
-printf '%s\n' 'Mock sftp upload complete.'
+if [[ "$input" == '@ls -1 /monthly_report' ]]; then
+  if [[ -f "$MOCK_STATE_DIR/monthly-listing" ]]; then
+    cat "$MOCK_STATE_DIR/monthly-listing"
+  fi
+elif [[ -n "$download_target" ]]; then
+  cp -- "$MOCK_STATE_DIR/monthly-remote/$remote_name" "$download_target"
+else
+  printf '%s\n' 'Mock sftp upload complete.'
+fi

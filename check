@@ -10,7 +10,7 @@ Runs the local static checks and fully mocked Bats test suite.
 No live PostgreSQL, SFTP, syslog, or Healthchecks.io access is required.
 
 Required test tools:
-  bats        Bats-core test runner
+  bats        Bats-core test runner (1.5.0 or newer)
   shellcheck  Shell static analyzer
 
 Options:
@@ -43,6 +43,8 @@ entrypoints=(
   generate-reports
   upload
   archive-reports
+  download-monthly-reports
+  services/download-monthly-reports
   services/generate-and-upload
   services/archive-reports
 )

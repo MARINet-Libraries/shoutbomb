@@ -13,6 +13,8 @@ setup() {
     generate-reports
     upload
     archive-reports
+    download-monthly-reports
+    services/download-monthly-reports
     services/generate-and-upload
     services/archive-reports
   )
