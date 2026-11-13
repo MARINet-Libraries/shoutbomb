@@ -288,7 +288,7 @@ test('overview defaults to system totals, prior-month changes, and alphabetical 
   assert.match(h.get('scope-note').textContent, /3 branches in this report/);
   const summaries = ['registered-summary', 'signups-summary', 'notice-summary'].map(id => h.get(id));
   assert.deepEqual(summaries.map(summary => summary.children[0].textContent), ['13', '1', '55']);
-  assert.equal(summaries[0].children[1].textContent, ' · 0 (0%) vs September 2026');
+  assert.equal(summaries[0].children[1].textContent, '0 (0%) vs September 2026');
   assert.equal(h.get('notice-total').textContent, '55');
   assert.match(h.get('notice-total-note').textContent, /counted once/);
   assert.deepEqual(tableRows(h, 'comparison').map(row => row[0]), ['Branch, With Comma', 'Novato Library', 'Sausalito Public Library']);
@@ -505,6 +505,46 @@ test('growth presentation shows current/prior counts, historical warnings, and b
   assert.match(svg.attributes['aria-label'], /August 2026: 71; October 2026: 81/);
 });
 
+test('visual polish preserves neutral changes, aligns numeric tables, and highlights the selected month', () => {
+  const html = fs.readFileSync(path.resolve(__dirname, '../lib/monthly-dashboard.html'), 'utf8');
+  const style = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+  const data = dashboardData();
+  data.reports[0].registrations = { users: 71, signups: 35 };
+  data.reports[1].registrations = { users: 81, signups: 12 };
+  const h = domHarness(data, '', undefined, html);
+  assert.equal(h.get('registered-summary').children[1].textContent, '+10 (+14.1%) vs September 2026');
+  assert.equal(h.get('signups-summary').children[1].textContent, '-23 (-65.7%) vs September 2026');
+  // Increases and decreases use the same neutral presentation, not success/error colors.
+  assert.equal(h.get('registered-summary').children[1].className, h.get('signups-summary').children[1].className);
+  assert.match(style, /\.metric-summary span\{[^}]*color:var\(--muted\)/);
+  assert.match(style, /\.numeric\{text-align:right\}/);
+  for (const id of ['registered-values', 'comparison', 'notices', 'items', 'keywords', 'sources']) {
+    const table = h.get(id).children.find(node => node.tagName === 'table');
+    const header = table.children.find(node => node.tagName === 'thead').children[0];
+    const row = tableBody(h, id).children[0];
+    for (const cells of [header.children, row.children]) {
+      assert.notEqual(cells[0].className, 'numeric');
+      assert.ok(cells.slice(1).every(cell => id === 'sources' ? cell.className !== 'numeric' : cell.className === 'numeric'));
+    }
+  }
+  function selectedMonth() {
+    const svg = h.get('registered-chart').children.find(node => node.tagName === 'svg');
+    assert.equal(svg.children.filter(node => node.attributes.class === 'point current').length, 1);
+    return svg.children.filter(node => node.attributes.class === 'axis-label selected').map(node => node.textContent);
+  }
+  assert.deepEqual(selectedMonth(), ['Oct 2026']);
+  h.win.location.hash = '#report=older';
+  assert.deepEqual(selectedMonth(), ['Sep 2026']);
+  h.back();
+  assert.deepEqual(selectedMonth(), ['Oct 2026']);
+  assert.match(style, /:focus-visible\{outline:2px solid var\(--accent\)/);
+  assert.ok(!/@import|url\(/i.test(style)); // No external fonts, images, or stylesheets.
+  const printStyle = style.slice(style.indexOf('@media print'));
+  assert.match(printStyle, /body\{[^}]*background:#fff/);
+  assert.match(printStyle, /\.toolbar\{display:none\}/);
+  assert.match(printStyle, /thead th\{background:transparent\}/);
+});
+
 test('plain report stacks three primary metric sections before all supporting information', t => {
   const dir = fixture(t), first = input(dir, '2026-10-05'), second = input(dir);
   const out = path.join(dir, 'simple.html');
@@ -530,7 +570,7 @@ test('plain report stacks three primary metric sections before all supporting in
   assert.ok(!html.includes('id="cards"'));
   const style = html.match(/<style>([\s\S]*?)<\/style>/)[1];
   assert.ok(!/display:\s*grid|scroll-snap|(?:min-)?height:\s*100(?:vh|svh|dvh)/.test(style));
-  assert.match(style, /background:#fff/);
+  assert.match(style, /background:var\(--paper\)/);
   assert.equal(h.get('keyword-summary').children[0].textContent, '3');
   h.win.location.hash = '#branch=sausalito-public-library';
   assert.equal(h.get('registered-summary').children[0].textContent, '1');

@@ -2,7 +2,7 @@
 
 - Created: 2026-11-09
 - Status: in-progress
-- Review state: Staged for review/commit; awaiting user acceptance.
+- Review state: Visual polish staged for review/commit; awaiting user acceptance.
 - Goal: Produce a simple, single-column staff report focused on month-over-month service adoption, usage, and growth or decline, defaulting to an all-branches overview with optional branch views. Use the user-approved August, September, and October 2026 named reports, with the new October source replacing the earlier baseline.
 
 ## Context and discovery
@@ -136,8 +136,22 @@ The user explicitly approved resuming T-002 using the three `sb_report_` files, 
 - Leave raw report CSVs, generated dashboards, `.agent-container`, and unrelated pre-existing task-workflow edits in `AGENTS.md` unstaged. Include only dashboard-related `AGENTS.md` changes.
 - Implementation is ready for review/commit preparation. T-002 remains in-progress with **Awaiting user acceptance**; requesting staging is not explicit approval to close the task. T-003 and T-004 remain planned.
 
+## Visual polish and verification (2026-11-13)
+
+- The user confirmed that adding `--named-periods` resolves the same-generation-date conflict for the approved August–October files and that the single-column layout is much better. They then explicitly approved restrained visual polish, not task closure or a status change.
+- The earlier implementation is now committed (`9f50036`); this polish was initially left unstaged. Preserved the unrelated pre-existing task-workflow edits in `AGENTS.md` and left raw CSVs/other untracked files alone.
+- Refined the template with warm off-white paper, navy text, teal accents, larger headline counts, closer count/change/chart grouping, lighter chart gridlines, stronger series lines, outlined selected points, and selected-month axis-label emphasis. Controls have consistent sizing, keyboard-focus outlines remain visible, and numeric table headers/cells align right while source provenance remains left-aligned.
+- Changes remain neutrally styled rather than green/red judgments. Preserved the single column, primary-before-secondary ordering, all supporting information, offline operation, and plain-white print styling. Removed only the leading separator before the now-stacked change text; parser, CLI, calculations, URL selection/history, and operational behavior are unchanged.
+- Regenerated `data/monthly-visualizations/index.html` using the three approved named root reports. Verified the entire embedded dataset is identical to the prior output, all source SHA-256 checksums are unchanged, output permissions remain 0600, and all three activity months are included (14 branches). Existing unattributed-signup/language reconciliation warnings remain unchanged.
+- Passed all 21 isolated Node tests (synthetic fixtures), JavaScript syntax checks for the entrypoint/parser/dashboard/tests, visualization CLI help, and `git diff --check`. New coverage checks neutral changes, numeric versus provenance alignment, selected-month highlighting through simulated history navigation, offline styles, and print rules.
+- Attempted `./check`: Bash syntax passed, then exit 127 reported missing ShellCheck and Bats. No browser executable was available for visual/navigation/print inspection. No live services, real `.env`, or downloader/notification state were accessed. Updated `README.md`, the dashboard-specific `AGENTS.md` contract, and `CHANGELOG.md`.
+
+## Polish commit preparation (2026-11-13)
+
+- At the user's request, staged the seven polish-related source/test/documentation/plan files, including only the dashboard-specific hunk in `AGENTS.md`. Left unrelated task-workflow edits, raw CSVs, generated HTML, and `.agent-container` unstaged; `git diff --cached --check` passed. Suggested `style: polish monthly report presentation`; no commit or task closure was requested or performed.
+
 ## Next step / acceptance
 
-**Awaiting user acceptance.** Review the staged changes and open `data/monthly-visualizations/index.html` in a browser and review the simpler vertical flow, primary-before-secondary order, all-branches/branch views, report selection, Back/Forward navigation, and printing. Rerun `./check` with Bats and ShellCheck installed. Adjust visual presentation if needed; no further period or library-grouping rules are inferred.
+**Awaiting user acceptance.** Open the regenerated `data/monthly-visualizations/index.html` in a browser and review the warmer styling, count hierarchy, chart labels, numeric tables, mobile layout, all-branches/branch views, report selection, Back/Forward navigation, and printing. Review the staged polish changes and rerun `./check` with Bats and ShellCheck installed. Adjust visual presentation if needed; no further period or library-grouping rules are inferred.
 
 Keep T-002 in-progress until the user explicitly approves closing it. No task closure or archive has been approved.

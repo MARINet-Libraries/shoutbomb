@@ -2,6 +2,8 @@
 
 ## 2026-11-13
 
+- Polished the single-column monthly report with warmer off-white/navy/teal styling, larger counts, tighter metric grouping, lighter chart grids, and selected-month axis emphasis. Refined controls and right-aligned numeric tables; changes remain neutrally styled and printing stays plain white, with no data, parser, CLI, or selection/history changes.
+- Added isolated coverage for numeric/text table alignment, neutral increase/decrease styling, selected-month highlighting through navigation, offline styling, and print rules.
 - Simplified the monthly report to a plain, single-column layout with registered patrons, signups, and notices stacked vertically, each with its count, prior-month change, and chart. Moved keyword usage, exact-value tables, branch/detail tables, and source notes below the primary metrics; removed cards and metric columns without changing report data, CLI behavior, or URL selection.
 - Keep primary counts visible when there are too few assigned months to chart a trend. Added layout-order coverage and updated isolated summary/single-report tests; printable overall/branch views remain available.
 

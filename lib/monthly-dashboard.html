@@ -6,10 +6,101 @@
 <meta name="referrer" content="no-referrer">
 <title>Shoutbomb · Monthly report</title>
 <style>
-:root{color-scheme:light;--ink:#222;--muted:#555;--line:#ddd;--accent:#26628b}
-*{box-sizing:border-box}body{margin:0;background:#fff;color:var(--ink);font:16px/1.5 system-ui,sans-serif}main{max-width:780px;margin:auto;padding:2rem 1rem}h1{font-size:1.6rem;margin:0 0 .4rem}h2{font-size:1.25rem;margin:0 0 .6rem}h3{font-size:1.05rem;margin:0 0 .6rem}p{margin:.5rem 0}.muted,.section-intro,.source-note,small{color:var(--muted)}header{margin-bottom:1.5rem}#heading-period{font-size:1.1rem}.toolbar{display:flex;flex-wrap:wrap;gap:.8rem;align-items:end;margin:1.5rem 0}.toolbar label{font-size:.85rem}.toolbar select{display:block;margin-top:.25rem}select,button{font:inherit;padding:.45rem;border:1px solid #999;border-radius:3px;background:white;color:var(--ink);max-width:100%;min-height:42px}button{cursor:pointer}.toolbar a{align-self:center}a{color:var(--accent);text-underline-offset:3px}select:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.metric{margin:2rem 0;padding-top:1.25rem;border-top:1px solid var(--line)}.metric-summary{font-variant-numeric:tabular-nums;margin:.5rem 0}.metric-summary strong{font-size:1.6rem;font-weight:650;margin-right:.5rem}.metric-summary span{color:var(--muted)}.section-intro,.source-note{font-size:.9rem}.chart svg{display:block;width:100%;max-width:600px;height:auto;margin:1rem 0}.grid-line{stroke:#e3e3e3;stroke-width:1}.axis-label{fill:#555;font:13px system-ui,sans-serif}.series-line{stroke:var(--accent);stroke-width:2;stroke-linejoin:round}.point{fill:var(--accent);stroke:white;stroke-width:2}.point.current{fill:white;stroke:var(--ink);stroke-width:2}.point-label{fill:var(--ink);font:600 14px system-ui,sans-serif}#additional-details{margin-top:2.5rem;border-top:2px solid var(--line);padding-top:1.5rem}.detail-section{margin:2rem 0}.detail-section>section{margin:1.5rem 0}.table-scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left;font-size:.85rem;font-variant-numeric:tabular-nums;margin:.7rem 0}caption{text-align:left;color:var(--muted);font-size:.8rem;padding:.3rem 0}th,td{border-bottom:1px solid var(--line);padding:.6rem .4rem;vertical-align:top}thead th{color:var(--muted);font-weight:600}tbody th{font-weight:500}th:first-child,td:first-child{padding-left:0}td{white-space:nowrap}#comparison table{min-width:850px}#sources td{white-space:normal;overflow-wrap:anywhere}.notice,.has-warnings{padding:.6rem 0 .6rem .8rem;border-left:2px solid #777}.source{overflow-wrap:anywhere;font-size:.85rem}details{margin:1rem 0}summary{cursor:pointer}details>div{margin:.7rem 0}#quality{padding-left:1.2rem;font-size:.9rem}#quality li+li{margin-top:.5rem}footer{border-top:1px solid var(--line);padding-top:1rem;font-size:.8rem;color:var(--muted)}#status:empty,#unattributed:empty{display:none}[hidden]{display:none!important}
-@media(max-width:500px){main{padding:1.25rem .8rem}.toolbar label{max-width:100%}.metric-summary span{display:block}.chart svg{margin:.75rem 0}}
-@media print{@page{margin:15mm}body{font-size:10pt}main{max-width:none;padding:0}.toolbar{display:none}h1{font-size:20pt}h2{font-size:15pt}h3{font-size:12pt}h1,h2,h3{break-after:avoid}.metric{margin:1rem 0;padding-top:1rem;break-inside:avoid}.metric-summary strong{font-size:18pt}.chart svg{max-height:180px;width:100%}.table-scroll{overflow:visible}#comparison table{min-width:0;font-size:6.5pt}th,td{white-space:normal;padding:.35rem .25rem}thead{display:table-header-group}tr{break-inside:avoid}a{color:inherit;text-decoration:none}details{display:none}footer{font-size:7pt}}
+:root{
+  color-scheme:light;
+  --paper:#fcfbf8;--ink:#243649;--muted:#566372;--line:#dce2e3;
+  --accent:#176b70;--grid:#e7ebeb;--table-head:#f0f3f2;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 system-ui,sans-serif}
+main{max-width:780px;margin:auto;padding:2.75rem 1.25rem}
+h1,h2,h3{line-height:1.25;text-wrap:balance}
+h1{font-size:1.85rem;font-weight:650;letter-spacing:-.035em;margin:0 0 .5rem}
+h2{font-size:1.3rem;font-weight:650;letter-spacing:-.02em;margin:0 0 .65rem}
+h3{font-size:1.05rem;font-weight:650;margin:0 0 .6rem}
+p{margin:.5rem 0}
+.muted,.section-intro,.source-note,small{color:var(--muted)}
+header{margin-bottom:1.75rem}
+#heading-period{font-size:1.2rem;font-weight:600;color:var(--accent);margin:.5rem 0 .2rem}
+#subtitle{margin-top:0;font-size:.95rem}
+.toolbar{display:flex;flex-wrap:wrap;gap:1rem;align-items:end;margin:1.75rem 0 2rem}
+.toolbar label{font-size:.8rem;font-weight:600;color:var(--muted)}
+.toolbar select{display:block;margin-top:.35rem}
+select,button{font:400 .9rem/1.4 system-ui,sans-serif;padding:.6rem .75rem;border:1px solid #9aa8af;border-radius:5px;background:var(--paper);color:var(--ink);max-width:100%;min-height:44px}
+button{cursor:pointer;font-weight:600}
+button:hover,select:hover{border-color:var(--accent)}
+button:hover{background:var(--table-head)}
+.toolbar a{align-self:center;font-size:.85rem}
+a{color:var(--accent);text-underline-offset:3px;text-decoration-thickness:1px}
+a:hover{text-decoration-thickness:2px}
+select:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+#scope-note{font-size:.9rem}
+.metric{margin:2.25rem 0;padding-top:1.5rem;border-top:1px solid var(--line)}
+.metric-summary{font-variant-numeric:tabular-nums;margin:.85rem 0 .6rem}
+.metric-summary strong{display:block;font-size:2.5rem;line-height:1.15;letter-spacing:-.04em;font-weight:650}
+.metric-summary span{display:block;margin-top:.35rem;font-size:.95rem;color:var(--muted)}
+.section-intro,.source-note{font-size:.9rem}
+.chart svg{display:block;width:100%;max-width:600px;height:auto;margin:.8rem 0 0;overflow:visible}
+.grid-line{stroke:var(--grid);stroke-width:1}
+.axis-label{fill:var(--muted);font:13px system-ui,sans-serif}
+.axis-label.selected{fill:var(--accent);font-weight:650}
+.series-line{stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+.point{fill:var(--accent);stroke:var(--paper);stroke-width:2}
+.point.current{fill:var(--paper);stroke:var(--accent);stroke-width:3}
+.point-label{fill:var(--ink);font:600 14px system-ui,sans-serif}
+#additional-details{margin-top:2.75rem;border-top:2px solid var(--line);padding-top:1.75rem}
+.detail-section{margin:2rem 0}
+.detail-section>section{margin:1.5rem 0}
+.detail-section .metric-summary strong{font-size:2rem}
+.table-scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;text-align:left;font-size:.85rem;font-variant-numeric:tabular-nums;margin:.7rem 0}
+caption{text-align:left;color:var(--muted);font-size:.8rem;padding:.35rem 0 .6rem}
+th,td{border-bottom:1px solid var(--line);padding:.65rem .55rem;vertical-align:top}
+thead th{background:var(--table-head);color:var(--muted);font-weight:600}
+tbody th{font-weight:500}
+.numeric{text-align:right}
+td{white-space:nowrap}
+#comparison table{min-width:850px}
+#sources td{white-space:normal;overflow-wrap:anywhere}
+.notice,.has-warnings{padding:.6rem 0 .6rem .85rem;border-left:3px solid #987634}
+.source{overflow-wrap:anywhere;font-size:.85rem}
+details{margin:1rem 0}
+summary{cursor:pointer;color:var(--accent)}
+details>div{margin:.7rem 0}
+#quality{padding-left:1.2rem;font-size:.9rem}
+#quality li+li{margin-top:.6rem}
+footer{border-top:1px solid var(--line);padding-top:1.25rem;font-size:.8rem;color:var(--muted)}
+#status:empty,#unattributed:empty{display:none}
+[hidden]{display:none!important}
+@media(max-width:500px){
+  main{padding:1.5rem 1rem}
+  h1{font-size:1.6rem}
+  .toolbar{gap:.85rem}
+  .toolbar label{max-width:100%;min-width:0}
+  .metric{margin:1.75rem 0;padding-top:1.25rem}
+  .metric-summary strong{font-size:2.15rem}
+}
+@media print{
+  @page{margin:15mm}
+  :root{--ink:#222;--muted:#555;--accent:#333;--paper:#fff;--grid:#ddd;--line:#ccc}
+  body{font-size:10pt;background:#fff}
+  main{max-width:none;padding:0}
+  .toolbar{display:none}
+  h1{font-size:20pt}h2{font-size:15pt}h3{font-size:12pt}
+  h1,h2,h3{break-after:avoid}
+  .metric{margin:1rem 0;padding-top:1rem;break-inside:avoid}
+  .metric-summary strong,.detail-section .metric-summary strong{font-size:18pt}
+  .metric-summary span{font-size:9pt}
+  .chart svg{max-height:180px;width:100%}
+  .table-scroll{overflow:visible}
+  #comparison table{min-width:0;font-size:6.5pt}
+  th,td{white-space:normal;padding:.35rem .25rem}
+  thead{display:table-header-group}thead th{background:transparent}
+  tr{break-inside:avoid}
+  a{color:inherit;text-decoration:none}
+  details{display:none}
+  footer{font-size:7pt}
+}
 </style>
 </head>
 <body>
