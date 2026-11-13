@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Shoutbomb · Monthly report</title>
+<style>
+:root{color-scheme:light;--ink:#222;--muted:#555;--line:#ddd;--accent:#26628b}
+*{box-sizing:border-box}body{margin:0;background:#fff;color:var(--ink);font:16px/1.5 system-ui,sans-serif}main{max-width:780px;margin:auto;padding:2rem 1rem}h1{font-size:1.6rem;margin:0 0 .4rem}h2{font-size:1.25rem;margin:0 0 .6rem}h3{font-size:1.05rem;margin:0 0 .6rem}p{margin:.5rem 0}.muted,.section-intro,.source-note,small{color:var(--muted)}header{margin-bottom:1.5rem}#heading-period{font-size:1.1rem}.toolbar{display:flex;flex-wrap:wrap;gap:.8rem;align-items:end;margin:1.5rem 0}.toolbar label{font-size:.85rem}.toolbar select{display:block;margin-top:.25rem}select,button{font:inherit;padding:.45rem;border:1px solid #999;border-radius:3px;background:white;color:var(--ink);max-width:100%;min-height:42px}button{cursor:pointer}.toolbar a{align-self:center}a{color:var(--accent);text-underline-offset:3px}select:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.metric{margin:2rem 0;padding-top:1.25rem;border-top:1px solid var(--line)}.metric-summary{font-variant-numeric:tabular-nums;margin:.5rem 0}.metric-summary strong{font-size:1.6rem;font-weight:650;margin-right:.5rem}.metric-summary span{color:var(--muted)}.section-intro,.source-note{font-size:.9rem}.chart svg{display:block;width:100%;max-width:600px;height:auto;margin:1rem 0}.grid-line{stroke:#e3e3e3;stroke-width:1}.axis-label{fill:#555;font:13px system-ui,sans-serif}.series-line{stroke:var(--accent);stroke-width:2;stroke-linejoin:round}.point{fill:var(--accent);stroke:white;stroke-width:2}.point.current{fill:white;stroke:var(--ink);stroke-width:2}.point-label{fill:var(--ink);font:600 14px system-ui,sans-serif}#additional-details{margin-top:2.5rem;border-top:2px solid var(--line);padding-top:1.5rem}.detail-section{margin:2rem 0}.detail-section>section{margin:1.5rem 0}.table-scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left;font-size:.85rem;font-variant-numeric:tabular-nums;margin:.7rem 0}caption{text-align:left;color:var(--muted);font-size:.8rem;padding:.3rem 0}th,td{border-bottom:1px solid var(--line);padding:.6rem .4rem;vertical-align:top}thead th{color:var(--muted);font-weight:600}tbody th{font-weight:500}th:first-child,td:first-child{padding-left:0}td{white-space:nowrap}#comparison table{min-width:850px}#sources td{white-space:normal;overflow-wrap:anywhere}.notice,.has-warnings{padding:.6rem 0 .6rem .8rem;border-left:2px solid #777}.source{overflow-wrap:anywhere;font-size:.85rem}details{margin:1rem 0}summary{cursor:pointer}details>div{margin:.7rem 0}#quality{padding-left:1.2rem;font-size:.9rem}#quality li+li{margin-top:.5rem}footer{border-top:1px solid var(--line);padding-top:1rem;font-size:.8rem;color:var(--muted)}#status:empty,#unattributed:empty{display:none}[hidden]{display:none!important}
+@media(max-width:500px){main{padding:1.25rem .8rem}.toolbar label{max-width:100%}.metric-summary span{display:block}.chart svg{margin:.75rem 0}}
+@media print{@page{margin:15mm}body{font-size:10pt}main{max-width:none;padding:0}.toolbar{display:none}h1{font-size:20pt}h2{font-size:15pt}h3{font-size:12pt}h1,h2,h3{break-after:avoid}.metric{margin:1rem 0;padding-top:1rem;break-inside:avoid}.metric-summary strong{font-size:18pt}.chart svg{max-height:180px;width:100%}.table-scroll{overflow:visible}#comparison table{min-width:0;font-size:6.5pt}th,td{white-space:normal;padding:.35rem .25rem}thead{display:table-header-group}tr{break-inside:avoid}a{color:inherit;text-decoration:none}details{display:none}footer{font-size:7pt}}
+</style>
+</head>
+<body>
+<main>
+<header><h1>Shoutbomb monthly report</h1><p id="heading-period"></p><p id="subtitle" class="muted"></p></header>
+<noscript><p class="notice">Enable JavaScript to select branches and display this offline report.</p></noscript>
+<div class="toolbar">
+<label>Branch<select id="branch" aria-label="Branch"></select></label>
+<label id="report-control">Report<select id="report" aria-label="Report"></select></label>
+<button id="print" type="button">Print</button><a id="permalink" href="#">Link to this view</a>
+</div>
+<p id="status" class="notice" role="status"></p>
+<section aria-labelledby="title"><h2 id="title">All branches</h2><p id="scope-note" class="muted"></p></section>
+<div id="trend-section">
+<section id="registered-metric" class="metric" aria-labelledby="registered-heading"><h2 id="registered-heading">Registered patrons</h2><p id="registered-summary" class="metric-summary"></p><p class="section-intro">Reported enrollment snapshot, not monthly active users.</p><div id="registered-chart" class="chart"></div></section>
+<section id="signups-metric" class="metric" aria-labelledby="signups-heading"><h2 id="signups-heading">New signups</h2><p id="signups-summary" class="metric-summary"></p><p class="section-intro">New registrations during the month, not the net change in enrollment.</p><div id="signups-chart" class="chart"></div></section>
+<section id="notices-metric" class="metric" aria-labelledby="notices-heading"><h2 id="notices-heading">Text notices sent</h2><p id="notice-summary" class="metric-summary"></p><p class="section-intro">Messages sent, not unique patrons.</p><div id="notice-chart" class="chart"></div></section>
+</div>
+<section id="additional-details" aria-labelledby="details-heading"><h2 id="details-heading">Additional information</h2>
+<section id="keyword-metric" class="detail-section" aria-labelledby="keyword-heading"><h3 id="keyword-heading">Keyword uses · All branches</h3><p id="keyword-summary" class="metric-summary"></p><p class="section-intro">System-wide command counts, not branch-specific or unique users. Includes test and administrative commands.</p><div id="keyword-chart" class="chart"></div><div id="keywords" class="table-scroll"></div></section>
+<section class="detail-section" aria-labelledby="values-heading"><h3 id="values-heading">Monthly values</h3><p id="trend-note" class="source-note"></p><div id="registered-values" class="table-scroll"></div><div id="signups-values" class="table-scroll"></div><div id="notice-values" class="table-scroll"></div><div id="keyword-values" class="table-scroll"></div></section>
+<section class="detail-section" aria-labelledby="branches-heading"><h3 id="branches-heading">Branch detail · Selected month</h3><p class="section-intro">Alphabetical, not ranked. Select a branch name to focus its metrics. Missing counts remain unknown.</p><div id="comparison" class="table-scroll"></div></section>
+<section class="detail-section" aria-labelledby="breakdown-heading"><h3 id="breakdown-heading">Notice breakdown</h3><p><strong id="notice-total"></strong> total messages in the selected view.</p><p id="notice-total-note" class="source-note"></p><div id="notices" class="table-scroll"></div></section>
+<section class="detail-section" aria-labelledby="items-heading"><h3 id="items-heading">Overdue items · Not messages</h3><div id="items" class="table-scroll"></div><p id="renewals" class="source-note"></p></section>
+<section class="detail-section" aria-labelledby="system-heading"><h3 id="system-heading">System-wide registration totals</h3><p class="section-intro">All branches · Not branch-specific</p><p id="unattributed" class="notice"></p><div id="system-registrations"></div><details><summary>Source-reported renewal percentages</summary><div id="system-percentages"></div></details></section>
+<section class="detail-section" aria-labelledby="quality-heading"><h3 id="quality-heading">Sources &amp; interpretation</h3><p id="period-note" class="source-note"></p><p id="comparison-note" class="source-note"></p><p id="source" class="source"></p><p id="quality-summary"></p><ul id="quality"></ul><div id="sources" class="table-scroll"></div></section>
+</section>
+<footer>This offline file includes all months and branches, even when one is selected. Selection is not access control. Share only with the intended audience. No external services, fonts, or analytics are used.</footer>
+</main>
+<script id="dashboard-data" type="application/json">/*__DASHBOARD_DATA__*/</script>
+<script>
+/*__DASHBOARD_SCRIPT__*/
+MonthlyDashboard.mount(JSON.parse(document.getElementById('dashboard-data').textContent), window, document);
+</script>
+</body>
+</html>

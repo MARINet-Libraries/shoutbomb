@@ -6,11 +6,12 @@
 - `sql/*.sql`: standalone Sierra/PostgreSQL report queries.
 - `generate-reports`, `upload`, `archive-reports`: canonical CSV export, SFTP upload, and retention entrypoints.
 - `download-monthly-reports`: canonical SFTP monthly-statistics downloader; writes only under `data/monthly-reports/`.
+- `visualize-monthly-reports`: Node.js 18+ offline dashboard entrypoint; parses explicit local inputs with `lib/monthly-report.cjs` and embeds `lib/monthly-dashboard.html`/`.js`, defaulting output to `data/monthly-visualizations/index.html`. Opens on a plain single-column report: registered patrons, new signups, and notices each have their count/change/chart together; keyword activity and all supporting tables/source notes follow below. No cards, side-by-side metric columns, or forced full-screen sections. All-branches and optional branch views remain printable. No `.env`, network, or downloader/notification state access.
 - `lib/common.sh`: narrow namespaced helpers for `.env` loading, array membership, and missing-variable collection; keep domain validation in its owning scripts.
 - `services/`: three monitored cron entrypoints; all use `services/lib/monitored-job.sh`.
-- `check` and `tests/`: canonical local static checks and fully mocked Bats behavior tests.
+- `check` and `tests/`: canonical local Bash/JavaScript static checks, fully mocked Bats behavior tests, and isolated Node dashboard tests (`tests/monthly-visualizations.test.cjs`); requires Bats-core, ShellCheck, and Node.js 18+.
 - `notes/`: point-in-time caveats, history, and deferred designs. Check their status/date against current code and `CHANGELOG.md`.
-- `data/`, `data/_archive/`, and `data/monthly-reports/`: generated/downloaded artifacts, never source-of-truth logic.
+- `data/`, `data/_archive/`, `data/monthly-reports/`, and `data/monthly-visualizations/`: generated/downloaded artifacts, never source-of-truth logic.
 - `.env.example`: configuration template; the real ignored `.env` may contain secrets.
 - Keep this file current when layout, interfaces, configuration, validation, or workflows change. Document implemented behavior, not proposals.
 
@@ -34,6 +35,7 @@
 - Single-report work: read its `sql/<name>.sql` and specifically referenced caveat notes only.
 - Export work: read `generate-reports`; upload work: read `upload` (its supported-report/destination mapping is canonical).
 - Monthly-download work: read `download-monthly-reports` and the linked plan in `planning/TASKS.md`; published filenames currently deduplicate downloads, not report contents.
+- Monthly-visualization work: read `visualize-monthly-reports`, `lib/monthly-report.cjs`, `lib/monthly-dashboard.html`/`.js`, and the linked plan in `planning/TASKS.md`; use synthetic fixtures for routine tests. Reporting months require explicit `--period`, legacy `--previous-month`, or opt-in `--named-periods` for `sb_report_Month_YYYY_...` labels (not generation dates). The parser supports dot/equals headings and prose/CSV variants; preserve unattributed signups separately without inventing a branch or adding them again to source totals. Missing metrics stay unknown, repeated summaries are not extra activity, and notice/item counts remain separate. Compare only the immediately prior calendar month when both values exist; percentages from a zero base are undefined, and chart lines must not bridge absent values/months. Registration snapshots and system-wide keyword uses are not adoption rates or unique active-user counts. Preserve branch/report URL fragments and Back/Forward synchronization; selection is not access control over the embedded dataset.
 - Retention work: read `archive-reports`; consult `notes/archive-reports-design-2026-05-01.md` for semantic changes or rationale.
 - Monitoring work: read the affected `services/` entrypoint and shared helper; for non-trivial changes also read `notes/monitored-services-design-2026-08-21.md`.
 - Configuration, dependency, CLI, or cron changes: read `.env.example` and relevant `README.md` sections.

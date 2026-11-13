@@ -13,6 +13,7 @@ Exports Sierra/PostgreSQL report data to CSV, uploads selected CSVs to Shoutbomb
   - [Generate reports](#generate-reports)
   - [Upload reports](#upload-reports)
   - [Download monthly statistics](#download-monthly-statistics)
+  - [Visualize monthly statistics](#visualize-monthly-statistics)
   - [Run the monitored generate-and-upload workflow](#run-the-monitored-generate-and-upload-workflow)
   - [Archive old files](#archive-old-files)
   - [Show help](#show-help)
@@ -37,6 +38,7 @@ If you are trying to find where something lives:
 | generate CSVs from SQL | `./generate-reports` |
 | change upload behavior or destinations | `./upload` |
 | download Shoutbomb monthly statistics | `./download-monthly-reports` |
+| visualize monthly statistics for branch staff | `./visualize-monthly-reports` |
 | run or change monitored cron workflows | `services/` |
 | archive or prune old CSVs manually | `./archive-reports` |
 | run monitored archive maintenance | `services/archive-reports` |
@@ -64,11 +66,12 @@ cp .env.example .env
 | `./generate-reports` | Runs every `sql/*.sql` file by default and writes CSVs to `data/` |
 | `./upload` | Uploads the latest supported CSVs from `data/` to Shoutbomb |
 | `./download-monthly-reports` | Downloads missing monthly statistics CSVs into `data/monthly-reports/` |
+| `./visualize-monthly-reports` | Parses monthly statistics into an offline HTML dashboard with bookmarkable branch views |
 | `./services/download-monthly-reports` | Runs daily download polling with logging and Healthchecks.io monitoring |
 | `./services/generate-and-upload` | Runs a generate/upload cron workflow with logging and Healthchecks.io monitoring |
 | `./archive-reports` | Moves older CSVs from `data/` into `data/_archive/` and deletes sufficiently old archived CSVs |
 | `./services/archive-reports` | Runs archive maintenance with logging and Healthchecks.io monitoring |
-| `./check` | Runs Bash syntax checks, ShellCheck, and fully mocked Bats behavior tests, including help smoke tests |
+| `./check` | Runs Bash/JavaScript syntax checks, ShellCheck, fully mocked Bats behavior tests, and isolated dashboard tests |
 
 Typical workflow:
 
@@ -88,9 +91,13 @@ Typical workflow:
 ├── upload
 ├── archive-reports
 ├── download-monthly-reports
+├── visualize-monthly-reports
 ├── check
 ├── lib/
-│   └── common.sh
+│   ├── common.sh
+│   ├── monthly-report.cjs
+│   ├── monthly-dashboard.html
+│   └── monthly-dashboard.js
 ├── tests/
 ├── services/
 │   ├── generate-and-upload
@@ -119,6 +126,8 @@ You will need:
 - `/usr/bin/logger` for cron workflow logging, unless `SHOUTBOMB_LOGGER_PATH` selects another executable
 - an SSH private key for uploads and monthly downloads
 - a trusted SSH host key in `known_hosts` or an alternate `known_hosts` file
+
+The offline visualization script additionally requires **Node.js 18 or newer** and a browser with JavaScript enabled. It has no npm dependencies and needs none of the database, SSH, monitoring, or `.env` configuration above. `./check` also requires Node.js for dashboard tests.
 
 ### Configure `.env`
 
@@ -293,6 +302,59 @@ Concurrent notification attempts use `data/monthly-reports/.arrival.lock/`; cont
 
 Before operational rollout, independently verify SFTP access to `/monthly_report`, the actual filename family, filename-reuse policy, a complete download, and both Healthchecks.io checks in the deployment environment. Verify monthly scheduling/grace/timezone, an eligible arrival, a no-op day, and recovery from a failed arrival ping using designated test checks, not production checks during routine validation. Local mocked checks do not prove these live integrations.
 
+### Visualize monthly statistics
+
+Create a self-contained HTML dashboard from one or more local monthly reports:
+
+```bash
+./visualize-monthly-reports data/monthly-reports/*.csv
+# Open data/monthly-visualizations/index.html in a browser.
+```
+
+The output defaults to project-root `data/monthly-visualizations/index.html`, regardless of the working directory. Input arguments and `--output` paths are relative to the current directory. Choose another destination with `--output /path/to/report.html`. The destination is replaced atomically with owner-only permissions; inputs are never overwritten. Generated dashboards are ignored by Git. No `.env` is read, and no network requests, downloader receipt updates, or retention changes occur.
+
+Branch selection is reflected in the URL, for example `index.html#branch=novato-library`. Opening that link restores the view; selector changes, branch comparison links, and browser Back/Forward navigation synchronize with the URL. A `report` fragment parameter preserves the selected report as well. Missing selection defaults to all branches/the latest included report; unknown IDs fall back with a visible notice. This works with local `file:` URLs and static hosting. A local link is usable by another staff member only if they can access the same HTML file; sharing the fragment alone does not share the file.
+
+The report opens on **all branches** for the latest included month. Its plain white, single-column layout puts **registered patrons**, **new signups**, and **text notices** one after another. Each metric has its heading, selected-month count, prior-month change, and chart together. There are no summary cards, side-by-side metric columns, or forced full-screen sections.
+
+Changes use the immediately preceding calendar month when both values are reported. A zero prior count has no defined percentage change; absent months/metrics are not substituted with zero or the nearest earlier report.
+
+Line charts have labeled count axes starting at zero and visible point values for short series; lines never bridge a missing value or calendar month. All confirmed months remain visible, with the selected report's point outlined. Branch selection focuses the first three metrics. Snapshot changes are not signup totals, confirmed month-end balances, or adoption rates.
+
+**Additional information follows below the three primary metrics:** system-wide keyword counts/chart, exact monthly value/change tables, alphabetical branch detail with clickable names, notice breakdowns, overdue-item counts (including successful/failed renewals where reported), system registration totals, source percentages with unverified denominators, filenames, and warnings. Nothing is removed from the underlying data. Keyword counts remain explicitly system-wide, include test/administrative commands, and are not unique active users or necessarily engagement. Overall/branch views are printable; no progress-bar-style charts are used. Notice volume is not a performance ranking. The HTML embeds **all included months and branches**: selection is not access control. Review inputs for sensitive information and distribute dashboards only to the intended audience. No external chart libraries, fonts, analytics, or server are used.
+
+#### Reporting months and trends
+
+By default the filename date is shown as a generation date with **activity month unconfirmed**; the script does not assume that a November file reports October activity. For a confirmed reporting month on one file:
+
+```bash
+./visualize-monthly-reports --period 2026-10 --output /tmp/october-dashboard.html /path/to/report.csv
+```
+
+For user-confirmed named exports such as `sb_report_August_2026_<identifier>_2026-11-10_16_02_39.csv`, explicitly use the **Month_YYYY label**, not the November generation timestamp:
+
+```bash
+./visualize-monthly-reports --named-periods sb_report_*.csv
+```
+
+`--named-periods` requires that named filename family, accepts full English month names, and assigns/sorts each file by its labeled activity month. It does not change default inference or the SFTP downloader's supported filename family. Supply only the authoritative report for each month; the script does not automatically choose between conflicting corrected versions.
+
+Only if you have confirmed the convention that legacy reports describe the previous calendar month, explicitly opt into filename-date assignment:
+
+```bash
+./visualize-monthly-reports --previous-month data/monthly-reports/*.csv
+```
+
+`--previous-month` requires legacy `sb_generate_monthly_report_...` dated filenames and handles year boundaries; it rejects named reports to avoid replacing their explicit month label with a generation-date assumption. At least two explicitly assigned months are needed to draw a trend; the primary metric counts remain visible when no trend is available. The report selector is hidden when only one report is included. `--period` requires exactly one file. All three period modes are mutually exclusive; no general reporting-month convention is inferred by default.
+
+#### Parsing and validation
+
+The parser understands branch sections, CSV-like rows (including quoted commas/escaped quotes), dot/equals section separators, prose and CSV reminder summaries, both branch-total/signup formats, prose/CSV registration totals, inline/CSV source percentages, and successful/failed renewal counts. It handles UTF-8 BOM and CRLF; quoted multiline fields are unsupported and fail with a diagnostic. Repeated reminder summaries are counted once, absent metrics remain **not reported** rather than zero, and registration-only branches are retained. A signup row without a branch is retained as unattributed and flagged; it is never assigned to an invented branch or added again to the source-reported system signup total. Item counts and message counts are never added together. No inferred renewal rates, language shares, or adoption rates are calculated.
+
+Source inconsistencies and unknown lines are reported as warnings in stderr and the dashboard; unknown text itself is not copied into diagnostics. Review warnings before relying on the output. Malformed recognized numeric/CSV rows, conflicting repeated metrics, and inputs without supported branch data fail before replacing an existing dashboard. Duplicate normalized reports for the same activity month are skipped; conflicting reports for that month fail so you can explicitly choose the correct source. Without a confirmed month, this check groups reports by filename date (or one undated group), not an inferred activity period.
+
+Exit status is 0 on success, 1 on input/output/format errors, and 2 on usage errors. A missing Node.js runtime prevents the executable from starting. This is a local visualization tool, not a monitored service or a new uploadable SQL report.
+
 ### Run the monitored generate-and-upload workflow
 
 Run the primary monitored generate-then-upload workflow used by cron:
@@ -369,23 +431,24 @@ Useful to know:
 ./services/archive-reports --help
 ./download-monthly-reports --help
 ./services/download-monthly-reports --help
+./visualize-monthly-reports --help
 ./check --help
 ```
 
 ## Local validation and tests
 
-Install the local test dependencies (Bats-core 1.5.0 or newer and ShellCheck) with the operating-system package manager.
+Install the local test dependencies (Bats-core 1.5.0 or newer, ShellCheck, and Node.js 18 or newer) with the operating-system package manager.
 
 FreeBSD:
 
 ```bash
-sudo pkg install bats-core hs-ShellCheck
+sudo pkg install bats-core hs-ShellCheck node
 ```
 
 Ubuntu 24.04:
 
 ```bash
-sudo apt install bats shellcheck
+sudo apt install bats shellcheck nodejs
 ```
 
 Then run the canonical local check:
@@ -394,7 +457,7 @@ Then run the canonical local check:
 ./check
 ```
 
-`./check` runs Bash syntax checks, ShellCheck, and the Bats suite under `tests/`, including help smoke tests. Behavioral tests create isolated temporary project trees and use generated fixtures plus fake `psql`, `sftp`, `curl`, `date`, workflow commands, and logger executables. They do not read the project `.env`, inspect working CSV artifacts, contact external services, write to the real system log, or require secrets.
+`./check` runs Bash/JavaScript syntax checks, ShellCheck, the Bats suite under `tests/` (including help smoke tests), and `node --test tests/monthly-visualizations.test.cjs`. Behavioral tests create isolated temporary project trees and use generated fixtures plus fake `psql`, `sftp`, `curl`, `date`, workflow commands, and logger executables. Dashboard tests use synthetic reports, temporary input/output paths, and a small DOM/event harness for generated-template/SVG wiring, URL restoration, selection updates, and simulated Back/Forward navigation. They also cover report-format variants, explicit named periods, corrections, unattributed signups, zero-base percentage changes, and gaps in timelines; they do not constitute a real-browser visual check. Tests do not read the project `.env`, inspect working CSV artifacts, contact external services, write to the real system log, or require secrets.
 
 The mocked `psql` tests validate report discovery, arguments, output-file handling, and failure behavior; they do not execute or prove the semantics of the production Sierra SQL. Live PostgreSQL/Sierra query, SFTP upload, and Healthchecks.io validation remain separate operational checks.
 

@@ -1,0 +1,108 @@
+#!/usr/bin/env node
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+const { parseReport, generatedDate, namedPeriod, validPeriod, previousMonth, branchIds, digest, canonical, serialize } = require('./lib/monthly-report.cjs');
+const HELP = `Usage: ./visualize-monthly-reports [options] FILE.csv [FILE.csv ...]
+
+Create a self-contained, offline HTML dashboard from monthly Shoutbomb reports.
+Branch selection is bookmarkable: report.html#branch=novato-library
+
+Options:
+  --output FILE       HTML destination (default: project data/monthly-visualizations/index.html)
+  --period YYYY-MM    Explicit reporting month; requires exactly one input file
+  --previous-month   Explicitly interpret legacy filename dates as the next month
+  --named-periods    Use Month_YYYY labels in sb_report_Month_YYYY_... filenames
+  -h, --help         Show help
+
+Without a period option, activity months remain unconfirmed. No .env, network,
+external libraries, downloader receipts, or remote services are used.
+Existing output is replaced atomically; input files are never overwritten.
+Exit status: 0 success, 1 input/output/format error, 2 usage error.
+Requires Node.js 18 or newer. All relative arguments use the current directory.
+`;
+
+function usageError(message) { const error = new Error(message); error.exitCode = 2; throw error; }
+function options(args) {
+  const result = { files: [], output: path.join(__dirname, 'data/monthly-visualizations/index.html') };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--') { result.files.push(...args.slice(i + 1)); break; }
+    if (arg === '--help' || arg === '-h') {
+      if (args.length !== 1) usageError('--help must be used alone');
+      return { help: true };
+    }
+    if (arg === '--output' || arg === '--period') {
+      const value = args[++i];
+      if (!value || value.startsWith('--')) usageError(`${arg} needs a value`);
+      const key = arg.slice(2);
+      if (key === 'period' && result.period) usageError('--period may only be supplied once');
+      result[key] = value;
+    } else if (arg === '--previous-month') result.previous = true;
+    else if (arg === '--named-periods') result.named = true;
+    else if (arg.startsWith('-')) usageError(`unknown option: ${arg}`);
+    else result.files.push(arg);
+  }
+  if (!result.files.length) usageError('provide at least one input file');
+  if (result.period && (!validPeriod(result.period) || result.files.length !== 1)) {
+    usageError('--period needs YYYY-MM and exactly one file');
+  }
+  if ([Boolean(result.period), Boolean(result.previous), Boolean(result.named)].filter(Boolean).length > 1) {
+    usageError('choose only one of --period, --previous-month, or --named-periods');
+  }
+  return result;
+}
+
+function main(args) {
+  const opts = options(args);
+  if (opts.help) { process.stdout.write(HELP); return; }
+  const output = path.resolve(opts.output);
+  // Resolve symlinks and hardlinks too, so output can never replace an input.
+  const outputStat = fs.existsSync(output) ? fs.statSync(output) : null;
+  for (const file of opts.files) {
+    const stat = fs.statSync(file);
+    if (!stat.isFile()) throw new Error('input must be a regular file');
+    if (path.resolve(file) === output || (outputStat && stat.dev === outputStat.dev && stat.ino === outputStat.ino)) {
+      throw new Error('output must not refer to an input file');
+    }
+  }
+  const reports = [], seen = new Map();
+  for (const file of opts.files) {
+    let parsed, date, period;
+    try {
+      parsed = parseReport(fs.readFileSync(file, 'utf8'));
+      date = generatedDate(file);
+      if (opts.previous && (!date || namedPeriod(file))) throw new Error('--previous-month requires legacy dated Shoutbomb filenames; use --named-periods for named reports');
+      if (opts.named && !namedPeriod(file)) throw new Error('--named-periods requires sb_report_Month_YYYY_... filenames');
+      period = opts.period || (opts.named ? namedPeriod(file) : opts.previous ? previousMonth(date) : null);
+    } catch (error) { throw new Error(`${path.basename(file)}: ${error.message}`); }
+    const semantic = serialize(canonical({ branches: parsed.branches, totals: parsed.totals, registrations: parsed.registrations, keywords: parsed.keywords, percentages: parsed.percentages, unattributed: parsed.unattributed }));
+    const key = period || date || 'undated';
+    const identity = digest(semantic);
+    if (seen.has(key)) {
+      if (seen.get(key) !== identity) throw new Error(`conflicting reports for ${key}; select one corrected/source report explicitly`);
+      process.stderr.write(`Skipped duplicate report for ${key}.\n`); continue;
+    }
+    seen.set(key, identity);
+    for (const warning of parsed.warnings) process.stderr.write(`${path.basename(file)}: ${warning}\n`);
+    reports.push({ ...parsed, source: path.basename(file), date, period, periodMethod: opts.named ? 'named' : opts.period ? 'explicit' : opts.previous ? 'previous-month' : 'unconfirmed', id: digest(`${key}:${identity}`) });
+  }
+  reports.sort((a, b) => (a.period || a.date || a.source).localeCompare(b.period || b.date || b.source));
+  const branches = branchIds([...new Set(reports.flatMap(report => report.branches.map(b => b.name)))].sort());
+  const template = fs.readFileSync(path.join(__dirname, 'lib/monthly-dashboard.html'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, 'lib/monthly-dashboard.js'), 'utf8');
+  const html = template.replace('/*__DASHBOARD_SCRIPT__*/', () => script).replace('/*__DASHBOARD_DATA__*/', () => serialize({ reports, branches }));
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  // A private, unique temporary directory on the same filesystem ensures atomic publication.
+  const stage = fs.mkdtempSync(path.join(path.dirname(output), '.visualize-'));
+  try {
+    const temporary = path.join(stage, 'report.html');
+    fs.writeFileSync(temporary, html, { mode: 0o600 });
+    fs.renameSync(temporary, output);
+  } finally { fs.rmSync(stage, { recursive: true, force: true }); }
+  process.stdout.write(`Created ${output} (${reports.length} report(s), ${branches.length} branches).\n`);
+}
+
+try { main(process.argv.slice(2)); }
+catch (error) { process.stderr.write(`Error: ${error.message}\n`); process.exitCode = error.exitCode || 1; }
