@@ -1,0 +1,244 @@
+#!/usr/bin/env bash
+set -u
+set -o pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: ./download-monthly-reports [--help] [-H HOST] [-P PORT] [-v] [--receipt-dir DIRECTORY]
+
+Downloads missing Shoutbomb statistics CSVs from /monthly_report into
+./data/monthly-reports/, preserving their original filenames. All matching files
+are downloaded on the first run, including historical files. Existing regular
+files are skipped: published filenames are assumed immutable. Remote files are
+never modified. Partial downloads are not published; failed files retry next run.
+
+Loads SSH/SFTP settings from the project-root .env. Strict host key checking is
+always enabled. The remote directory must already exist.
+
+Required .env variables:
+  SSH_USERNAME
+  SSH_IDENTITY_FILE     Absolute path to SSH private key
+
+Optional .env variables:
+  SSH_HOST              SSH host (default: ftp.shoutbomb.com)
+  SSH_PORT              SSH port (default: 22)
+  SSH_KNOWN_HOSTS_FILE  Absolute path to known_hosts override
+
+Options:
+  -h, --help            Show this help text
+  -H, --host HOST       SSH host override
+  -P, --port PORT       SSH port override
+  -v, --verbose         Verbose sftp output
+  --receipt-dir DIR     Absolute directory for durable download receipts (service
+                        integration). Each basename contains its download month,
+                        YYYY-MM, in the system/.env TZ timezone. A receipt is only
+                        complete when the corresponding local CSV also exists.
+                        Existing files do not produce new receipts. Receipt
+                        failures prevent publication and return failure.
+
+Exit status: 0 on success (including no new files), 1 on configuration, lock,
+listing, or download failure, 2 on usage error, 127 when sftp is unavailable.
+Overlapping invocations fail without downloading. After an unclean termination,
+remove data/monthly-reports/.download.lock only after verifying no run is active.
+EOF
+}
+
+host=""
+port=""
+verbose=0
+receipt_dir=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -H|--host|-P|--port)
+      if [[ $# -lt 2 || -z "$2" || "$2" == -* ]]; then
+        echo "Error: Option $1 requires a value." >&2
+        exit 2
+      fi
+      case "$1" in
+        -H|--host) host="$2" ;;
+        -P|--port) port="$2" ;;
+      esac
+      shift 2
+      ;;
+    --receipt-dir)
+      if [[ $# -lt 2 || "$2" != /* || -n "$receipt_dir" ]]; then
+        echo "Error: --receipt-dir requires one absolute directory and may only be specified once." >&2
+        exit 2
+      fi
+      receipt_dir="$2"
+      shift 2
+      ;;
+    -v|--verbose)
+      verbose=1
+      shift
+      ;;
+    *)
+      echo "Error: Unexpected argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+. "$script_dir/lib/common.sh"
+
+if ! command -v sftp >/dev/null 2>&1; then
+  echo "Error: sftp was not found on PATH." >&2
+  exit 127
+fi
+
+if ! shoutbomb_load_env "$script_dir/.env"; then
+  exit 1
+fi
+missing_vars=()
+shoutbomb_collect_missing_vars missing_vars SSH_USERNAME SSH_IDENTITY_FILE
+if [[ ${#missing_vars[@]} -gt 0 ]]; then
+  echo "Error: Missing required SSH/SFTP settings:" >&2
+  printf '  %s\n' "${missing_vars[@]}" >&2
+  exit 1
+fi
+
+for variable_name in SSH_IDENTITY_FILE SSH_KNOWN_HOSTS_FILE; do
+  file_path="${!variable_name:-}"
+  if [[ "$variable_name" == SSH_KNOWN_HOSTS_FILE && -z "$file_path" ]]; then
+    continue
+  fi
+  if [[ "$file_path" != /* || ! -f "$file_path" || ! -r "$file_path" ]]; then
+    echo "Error: $variable_name must be an absolute path to a readable file." >&2
+    exit 1
+  fi
+done
+
+host="${host:-${SSH_HOST:-ftp.shoutbomb.com}}"
+port="${port:-${SSH_PORT:-22}}"
+if [[ ! "$port" =~ ^[0-9]{1,5}$ ]] || (( 10#$port < 1 || 10#$port > 65535 )); then
+  echo "Error: SSH port must be a number from 1 to 65535." >&2
+  exit 1
+fi
+
+sftp_args=(
+  -q -b - -P "$port"
+  -o BatchMode=yes
+  -o StrictHostKeyChecking=yes
+  -o IdentitiesOnly=yes
+  -i "$SSH_IDENTITY_FILE"
+)
+if [[ -n "${SSH_KNOWN_HOSTS_FILE:-}" ]]; then
+  sftp_args+=( -o "UserKnownHostsFile=$SSH_KNOWN_HOSTS_FILE" )
+fi
+if [[ $verbose -eq 1 ]]; then
+  sftp_args=( -v "${sftp_args[@]}" )
+fi
+
+sftp_quote() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '"%s"' "$value"
+}
+
+destination="$script_dir/data/monthly-reports"
+# SFTP batch commands are line-oriented, even inside quotes.
+if [[ "$destination" == *$'\n'* || "$destination" == *$'\r'* ]]; then
+  echo "Error: Project path must not contain line breaks." >&2
+  exit 1
+fi
+
+umask 077
+mkdir -p -- "$destination" || exit 1
+lock_dir="$destination/.download.lock"
+if ! mkdir -- "$lock_dir" 2>/dev/null; then
+  echo "Error: Cannot acquire download lock: $lock_dir. Another run may be active." >&2
+  exit 1
+fi
+# Only the process that created the lock removes it. Staging stays on the same
+# filesystem as completed files so each final rename is atomic.
+trap 'rm -rf -- "$lock_dir"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if [[ -n "$receipt_dir" ]]; then
+  if [[ -L "$receipt_dir" ]] || ! mkdir -p -- "$receipt_dir"; then
+    echo "Error: Cannot create receipt directory." >&2
+    exit 1
+  fi
+  receipt_dir="$(cd -- "$receipt_dir" && pwd -P)" || exit 1
+  physical_destination="$(cd -- "$destination" && pwd -P)" || exit 1
+  if [[ "$receipt_dir" == "$physical_destination" ||
+    "$receipt_dir" == "$physical_destination/.download.lock"* ]]; then
+    echo "Error: Receipt directory must be separate from completed CSVs and staging." >&2
+    exit 1
+  fi
+fi
+
+record_receipt() {
+  local name="$1"
+  local month
+  [[ -n "$receipt_dir" ]] || return 0
+  # Persist the result before publishing the CSV, closing the publish/result
+  # crash gap. Consumers must check that the completed CSV exists as well.
+  if ! month="$(date +%Y-%m)" || [[ ! "$month" =~ ^[0-9]{4}-(0[1-9]|1[0-2])$ ]] ||
+    [[ -L "$receipt_dir/$name" || -d "$receipt_dir/$name" ]] ||
+    ! printf '%s\n' "$month" > "$lock_dir/receipt.part" ||
+    ! mv -- "$lock_dir/receipt.part" "$receipt_dir/$name"; then
+    echo "Error: Cannot record download receipt for $name" >&2
+    return 1
+  fi
+}
+
+if ! printf '@ls -1 /monthly_report\n' |
+  sftp "${sftp_args[@]}" "${SSH_USERNAME}@${host}" > "$lock_dir/listing"; then
+  echo "Error: Failed to list /monthly_report; no files downloaded." >&2
+  exit 1
+fi
+
+downloaded=0
+skipped=0
+ignored=0
+failed=0
+filename_pattern='^sb_generate_monthly_report_[A-Za-z0-9_-]+_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}_[0-9]{2}_[0-9]{2}\.csv$'
+while IFS= read -r entry || [[ -n "$entry" ]]; do
+  # OpenSSH versions may return basenames or paths qualified by the directory.
+  name="${entry#/monthly_report/}"
+  if [[ ! "$name" =~ $filename_pattern ]]; then
+    ignored=$((ignored + 1))
+    continue
+  fi
+  local_file="$destination/$name"
+  if [[ -L "$local_file" || ( -e "$local_file" && ! -f "$local_file" ) ]]; then
+    echo "Error: Destination is not a regular non-symlink file: $name" >&2
+    failed=$((failed + 1))
+    continue
+  fi
+  if [[ -f "$local_file" ]]; then
+    skipped=$((skipped + 1))
+    continue
+  fi
+
+  echo "Downloading $name"
+  if printf '@get %s %s\n' \
+    "$(sftp_quote "/monthly_report/$name")" \
+    "$(sftp_quote "$lock_dir/download.part")" |
+    sftp "${sftp_args[@]}" "${SSH_USERNAME}@${host}" &&
+    [[ -f "$lock_dir/download.part" && ! -L "$lock_dir/download.part" ]] &&
+    record_receipt "$name" &&
+    mv -- "$lock_dir/download.part" "$local_file"; then
+    downloaded=$((downloaded + 1))
+    echo "Download complete: $name"
+  else
+    echo "Error: Failed to download $name" >&2
+    rm -f -- "$lock_dir/download.part"
+    failed=$((failed + 1))
+  fi
+done < "$lock_dir/listing"
+
+printf 'Monthly reports: downloaded=%s skipped=%s ignored=%s failed=%s\n' \
+  "$downloaded" "$skipped" "$ignored" "$failed"
+[[ $failed -eq 0 ]]

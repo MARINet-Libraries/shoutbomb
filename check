@@ -6,12 +6,13 @@ usage() {
   cat <<'EOF'
 Usage: ./check [--help]
 
-Runs the local static checks and fully mocked Bats test suite.
+Runs local static checks, fully mocked Bats tests, and isolated dashboard tests.
 No live PostgreSQL, SFTP, syslog, or Healthchecks.io access is required.
 
 Required test tools:
-  bats        Bats-core test runner
+  bats        Bats-core test runner (1.5.0 or newer)
   shellcheck  Shell static analyzer
+  node        Node.js 18 or newer (offline dashboard tests)
 
 Options:
   -h, --help  Show this help text
@@ -43,6 +44,8 @@ entrypoints=(
   generate-reports
   upload
   archive-reports
+  download-monthly-reports
+  services/download-monthly-reports
   services/generate-and-upload
   services/archive-reports
 )
@@ -68,7 +71,7 @@ for file in "${shell_files[@]}"; do
 done
 
 missing_tools=()
-for tool in shellcheck bats; do
+for tool in shellcheck bats node; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     missing_tools+=("$tool")
   fi
@@ -81,10 +84,10 @@ if [[ ${#missing_tools[@]} -ne 0 ]]; then
 Install them with the operating-system package manager.
 
 FreeBSD:
-  sudo pkg install bats-core hs-ShellCheck
+  sudo pkg install bats-core hs-ShellCheck node
 
 Ubuntu 24.04:
-  sudo apt install bats shellcheck
+  sudo apt install bats shellcheck nodejs
 EOF
   exit 127
 fi
@@ -95,5 +98,13 @@ printf '%s\n' 'Running ShellCheck...'
   shellcheck -x "${shell_files[@]}"
 ) || exit 1
 
+printf '%s\n' 'Running JavaScript syntax checks...'
+for file in visualize-monthly-reports lib/monthly-report.cjs lib/monthly-dashboard.js tests/monthly-visualizations.test.cjs; do
+  node --check "$script_dir/$file" || exit 1
+done
+
 printf '%s\n' 'Running Bats tests...'
-bats "$script_dir/tests"
+bats "$script_dir/tests" || exit 1
+
+printf '%s\n' 'Running isolated dashboard tests...'
+node --test "$script_dir/tests/monthly-visualizations.test.cjs"

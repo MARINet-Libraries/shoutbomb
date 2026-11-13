@@ -24,6 +24,8 @@ setup_project_fixture() {
   cp -- "$TEST_SOURCE_ROOT/generate-reports" "$TEST_PROJECT/generate-reports"
   cp -- "$TEST_SOURCE_ROOT/upload" "$TEST_PROJECT/upload"
   cp -- "$TEST_SOURCE_ROOT/archive-reports" "$TEST_PROJECT/archive-reports"
+  cp -- "$TEST_SOURCE_ROOT/download-monthly-reports" "$TEST_PROJECT/download-monthly-reports"
+  cp -- "$TEST_SOURCE_ROOT/services/download-monthly-reports" "$TEST_PROJECT/services/download-monthly-reports"
   cp -- "$TEST_SOURCE_ROOT/lib/common.sh" "$TEST_PROJECT/lib/common.sh"
   cp -- "$TEST_SOURCE_ROOT/services/generate-and-upload" "$TEST_PROJECT/services/generate-and-upload"
   cp -- "$TEST_SOURCE_ROOT/services/archive-reports" "$TEST_PROJECT/services/archive-reports"
@@ -42,6 +44,8 @@ setup_project_fixture() {
     "$TEST_PROJECT/generate-reports" \
     "$TEST_PROJECT/upload" \
     "$TEST_PROJECT/archive-reports" \
+    "$TEST_PROJECT/download-monthly-reports" \
+    "$TEST_PROJECT/services/download-monthly-reports" \
     "$TEST_PROJECT/services/generate-and-upload" \
     "$TEST_PROJECT/services/archive-reports" \
     "$MOCK_BIN/curl" \
@@ -58,9 +62,10 @@ setup_project_fixture() {
   export PATH="$MOCK_BIN:$TEST_ORIGINAL_PATH"
   export MOCK_DATE_EPOCH=1700000000
 
-  unset SHOUTBOMB_LOGGER_PATH
+  unset SHOUTBOMB_LOGGER_PATH MOCK_DATE_MONTH MOCK_CURL_FAIL_MATCH
+  unset HEALTHCHECKS_MONTHLY_ARRIVAL_URL HEALTHCHECKS_MONTHLY_DOWNLOAD_URL
   unset MOCK_PSQL_FAIL_REPORTS MOCK_PSQL_FAILURE_STATUS
-  unset MOCK_SFTP_FAIL_MATCH MOCK_SFTP_FAILURE_STATUS
+  unset MOCK_SFTP_FAIL_MATCH MOCK_SFTP_FAILURE_STATUS MOCK_SFTP_INTERRUPT_DOWNLOAD
   unset MOCK_CURL_STATUS MOCK_LOGGER_FAIL_TAG MOCK_LOGGER_FAILURE_STATUS MOCK_LOGGER_STATUS
   unset MOCK_GENERATE_REPORTS_STATUS MOCK_UPLOAD_STATUS MOCK_ARCHIVE_REPORTS_STATUS
   unset PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD
