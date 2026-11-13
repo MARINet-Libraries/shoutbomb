@@ -15,15 +15,17 @@
 body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 system-ui,sans-serif}
 main{max-width:780px;margin:auto;padding:2.75rem 1.25rem}
 h1,h2,h3{line-height:1.25;text-wrap:balance}
-h1{font-size:1.85rem;font-weight:650;letter-spacing:-.035em;margin:0 0 .5rem}
+h1{font-size:1.4rem;font-weight:650;letter-spacing:-.025em;margin:0 0 .35rem}
 h2{font-size:1.3rem;font-weight:650;letter-spacing:-.02em;margin:0 0 .65rem}
 h3{font-size:1.05rem;font-weight:650;margin:0 0 .6rem}
+h4{font-size:1rem;line-height:1.25;font-weight:650;margin:0 0 .6rem}
 p{margin:.5rem 0}
 .muted,.section-intro,.source-note,small{color:var(--muted)}
-header{margin-bottom:1.75rem}
-#heading-period{font-size:1.2rem;font-weight:600;color:var(--accent);margin:.5rem 0 .2rem}
-#subtitle{margin-top:0;font-size:.95rem}
-.toolbar{display:flex;flex-wrap:wrap;gap:1rem;align-items:end;margin:1.75rem 0 2rem}
+header{margin-bottom:1.25rem}
+.report-context{font-size:1.3rem;font-weight:600;line-height:1.4;margin:.35rem 0}
+#heading-period{color:var(--accent)}
+.context-divider{color:var(--muted);font-weight:400}
+.toolbar{display:flex;flex-wrap:wrap;gap:.85rem;align-items:end;margin:1rem 0 .65rem}
 .toolbar label{font-size:.8rem;font-weight:600;color:var(--muted)}
 .toolbar select{display:block;margin-top:.35rem}
 select,button{font:400 .9rem/1.4 system-ui,sans-serif;padding:.6rem .75rem;border:1px solid #9aa8af;border-radius:5px;background:var(--paper);color:var(--ink);max-width:100%;min-height:44px}
@@ -49,8 +51,14 @@ select:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible{
 .point.current{fill:var(--paper);stroke:var(--accent);stroke-width:3}
 .point-label{fill:var(--ink);font:600 14px system-ui,sans-serif}
 #additional-details{margin-top:2.75rem;border-top:2px solid var(--line);padding-top:1.75rem}
+.detail-group{margin:2.5rem 0;border-top:1px solid var(--line);padding-top:1.5rem}
+.detail-group>h3{font-size:1.2rem}
 .detail-section{margin:2rem 0}
-.detail-section>section{margin:1.5rem 0}
+.detail-jumps{display:flex;flex-wrap:wrap;gap:.35rem 1rem;margin:.65rem 0 1.5rem;align-items:baseline}
+.detail-jumps span{font-size:.85rem;color:var(--muted)}
+.detail-jumps button{font-size:.85rem;font-weight:400;border:0;background:none;padding:.35rem 0;color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+.detail-jumps button:hover{text-decoration-thickness:2px}
+.jump-target:focus{outline:2px solid var(--accent);outline-offset:5px}
 .detail-section .metric-summary strong{font-size:2rem}
 .table-scroll{overflow-x:auto}
 table{width:100%;border-collapse:collapse;text-align:left;font-size:.85rem;font-variant-numeric:tabular-nums;margin:.7rem 0}
@@ -60,7 +68,12 @@ thead th{background:var(--table-head);color:var(--muted);font-weight:600}
 tbody th{font-weight:500}
 .numeric{text-align:right}
 td{white-space:nowrap}
-#comparison table{min-width:850px}
+#comparison table{table-layout:fixed}
+#comparison thead th:first-child{width:36%}
+#comparison thead th:nth-child(2){width:18%}
+#comparison th,#comparison td{white-space:normal;overflow-wrap:anywhere}
+#comparison .branch-heading{text-align:left;background:var(--table-head);padding-top:.85rem;font-weight:600}
+#comparison .branch-heading a{display:inline-block;padding:.2rem 0}
 #sources td{white-space:normal;overflow-wrap:anywhere}
 .notice,.has-warnings{padding:.6rem 0 .6rem .85rem;border-left:3px solid #987634}
 .source{overflow-wrap:anywhere;font-size:.85rem}
@@ -74,7 +87,11 @@ footer{border-top:1px solid var(--line);padding-top:1.25rem;font-size:.8rem;colo
 [hidden]{display:none!important}
 @media(max-width:500px){
   main{padding:1.5rem 1rem}
-  h1{font-size:1.6rem}
+  h1{font-size:1.2rem}
+  .report-context{font-size:1.15rem}
+  .chart .axis-label{font-size:15px}
+  .chart .point-label{font-size:16px}
+  #comparison th,#comparison td{padding:.6rem .3rem}
   .toolbar{gap:.85rem}
   .toolbar label{max-width:100%;min-width:0}
   .metric{margin:1.75rem 0;padding-top:1.25rem}
@@ -85,15 +102,16 @@ footer{border-top:1px solid var(--line);padding-top:1.25rem;font-size:.8rem;colo
   :root{--ink:#222;--muted:#555;--accent:#333;--paper:#fff;--grid:#ddd;--line:#ccc}
   body{font-size:10pt;background:#fff}
   main{max-width:none;padding:0}
-  .toolbar{display:none}
+  .toolbar,.detail-jumps{display:none}
   h1{font-size:20pt}h2{font-size:15pt}h3{font-size:12pt}
-  h1,h2,h3{break-after:avoid}
+  h1,h2,h3,h4{break-after:avoid}
   .metric{margin:1rem 0;padding-top:1rem;break-inside:avoid}
   .metric-summary strong,.detail-section .metric-summary strong{font-size:18pt}
   .metric-summary span{font-size:9pt}
   .chart svg{max-height:180px;width:100%}
   .table-scroll{overflow:visible}
-  #comparison table{min-width:0;font-size:6.5pt}
+  #comparison table{font-size:9pt}
+  #comparison .branch-heading{break-after:avoid;background:transparent}
   th,td{white-space:normal;padding:.35rem .25rem}
   thead{display:table-header-group}thead th{background:transparent}
   tr{break-inside:avoid}
@@ -105,28 +123,31 @@ footer{border-top:1px solid var(--line);padding-top:1.25rem;font-size:.8rem;colo
 </head>
 <body>
 <main>
-<header><h1>Shoutbomb monthly report</h1><p id="heading-period"></p><p id="subtitle" class="muted"></p></header>
+<header><h1>Shoutbomb monthly report</h1><p class="report-context"><span id="heading-period"></span><span class="context-divider" aria-hidden="true"> / </span><span id="title">All branches</span></p>
 <noscript><p class="notice">Enable JavaScript to select branches and display this offline report.</p></noscript>
 <div class="toolbar">
 <label>Branch<select id="branch" aria-label="Branch"></select></label>
 <label id="report-control">Report<select id="report" aria-label="Report"></select></label>
 <button id="print" type="button">Print</button><a id="permalink" href="#">Link to this view</a>
 </div>
+<p id="scope-note" class="muted"></p></header>
 <p id="status" class="notice" role="status"></p>
-<section aria-labelledby="title"><h2 id="title">All branches</h2><p id="scope-note" class="muted"></p></section>
 <div id="trend-section">
 <section id="registered-metric" class="metric" aria-labelledby="registered-heading"><h2 id="registered-heading">Registered patrons</h2><p id="registered-summary" class="metric-summary"></p><p class="section-intro">Reported enrollment snapshot, not monthly active users.</p><div id="registered-chart" class="chart"></div></section>
 <section id="signups-metric" class="metric" aria-labelledby="signups-heading"><h2 id="signups-heading">New signups</h2><p id="signups-summary" class="metric-summary"></p><p class="section-intro">New registrations during the month, not the net change in enrollment.</p><div id="signups-chart" class="chart"></div></section>
 <section id="notices-metric" class="metric" aria-labelledby="notices-heading"><h2 id="notices-heading">Text notices sent</h2><p id="notice-summary" class="metric-summary"></p><p class="section-intro">Messages sent, not unique patrons.</p><div id="notice-chart" class="chart"></div></section>
 </div>
 <section id="additional-details" aria-labelledby="details-heading"><h2 id="details-heading">Additional information</h2>
-<section id="keyword-metric" class="detail-section" aria-labelledby="keyword-heading"><h3 id="keyword-heading">Keyword uses · All branches</h3><p id="keyword-summary" class="metric-summary"></p><p class="section-intro">System-wide command counts, not branch-specific or unique users. Includes test and administrative commands.</p><div id="keyword-chart" class="chart"></div><div id="keywords" class="table-scroll"></div></section>
-<section class="detail-section" aria-labelledby="values-heading"><h3 id="values-heading">Monthly values</h3><p id="trend-note" class="source-note"></p><div id="registered-values" class="table-scroll"></div><div id="signups-values" class="table-scroll"></div><div id="notice-values" class="table-scroll"></div><div id="keyword-values" class="table-scroll"></div></section>
-<section class="detail-section" aria-labelledby="branches-heading"><h3 id="branches-heading">Branch detail · Selected month</h3><p class="section-intro">Alphabetical, not ranked. Select a branch name to focus its metrics. Missing counts remain unknown.</p><div id="comparison" class="table-scroll"></div></section>
-<section class="detail-section" aria-labelledby="breakdown-heading"><h3 id="breakdown-heading">Notice breakdown</h3><p><strong id="notice-total"></strong> total messages in the selected view.</p><p id="notice-total-note" class="source-note"></p><div id="notices" class="table-scroll"></div></section>
-<section class="detail-section" aria-labelledby="items-heading"><h3 id="items-heading">Overdue items · Not messages</h3><div id="items" class="table-scroll"></div><p id="renewals" class="source-note"></p></section>
-<section class="detail-section" aria-labelledby="system-heading"><h3 id="system-heading">System-wide registration totals</h3><p class="section-intro">All branches · Not branch-specific</p><p id="unattributed" class="notice"></p><div id="system-registrations"></div><details><summary>Source-reported renewal percentages</summary><div id="system-percentages"></div></details></section>
-<section class="detail-section" aria-labelledby="quality-heading"><h3 id="quality-heading">Sources &amp; interpretation</h3><p id="period-note" class="source-note"></p><p id="comparison-note" class="source-note"></p><p id="source" class="source"></p><p id="quality-summary"></p><ul id="quality"></ul><div id="sources" class="table-scroll"></div></section>
+<nav class="detail-jumps" aria-label="Supporting information"><span>Jump to:</span><button id="jump-activity" type="button">Activity details</button><button id="jump-branches" type="button">Branch comparisons</button><button id="jump-sources" type="button">Sources &amp; interpretation</button></nav>
+<section class="detail-group" aria-labelledby="activity-heading"><h3 id="activity-heading" class="jump-target" tabindex="-1">Activity details</h3>
+<section id="keyword-metric" class="detail-section" aria-labelledby="keyword-heading"><h4 id="keyword-heading">Keyword uses · All branches</h4><p id="keyword-summary" class="metric-summary"></p><p class="section-intro">System-wide command counts, not branch-specific or unique users. Includes test and administrative commands.</p><div id="keyword-chart" class="chart"></div><div id="keywords" class="table-scroll"></div></section>
+<section class="detail-section" aria-labelledby="values-heading"><h4 id="values-heading">Monthly values</h4><p id="trend-note" class="source-note"></p><div id="registered-values" class="table-scroll"></div><div id="signups-values" class="table-scroll"></div><div id="notice-values" class="table-scroll"></div><div id="keyword-values" class="table-scroll"></div></section>
+<section class="detail-section" aria-labelledby="breakdown-heading"><h4 id="breakdown-heading">Notice breakdown</h4><p><strong id="notice-total"></strong> total messages in the selected view.</p><p id="notice-total-note" class="source-note"></p><div id="notices" class="table-scroll"></div></section>
+<section class="detail-section" aria-labelledby="items-heading"><h4 id="items-heading">Overdue items · Not messages</h4><div id="items" class="table-scroll"></div><p id="renewals" class="source-note"></p></section>
+<section class="detail-section" aria-labelledby="system-heading"><h4 id="system-heading">System-wide registration totals</h4><p class="section-intro">All branches · Not branch-specific</p><p id="unattributed" class="notice"></p><div id="system-registrations"></div><details><summary>Source-reported renewal percentages</summary><div id="system-percentages"></div></details></section>
+</section>
+<section class="detail-group" aria-labelledby="branches-heading"><h3 id="branches-heading" class="jump-target" tabindex="-1">Branch comparisons</h3><p class="section-intro">Selected month · Alphabetical, not ranked. Select a branch name to focus its metrics. Missing counts remain unknown.</p><div id="comparison"></div></section>
+<section class="detail-group" aria-labelledby="quality-heading"><h3 id="quality-heading" class="jump-target" tabindex="-1">Sources &amp; interpretation</h3><p id="period-note" class="source-note"></p><p id="comparison-note" class="source-note"></p><p id="source" class="source"></p><p id="quality-summary"></p><ul id="quality"></ul><div id="sources" class="table-scroll"></div></section>
 </section>
 <footer>This offline file includes all months and branches, even when one is selected. Selection is not access control. Share only with the intended audience. No external services, fonts, or analytics are used.</footer>
 </main>

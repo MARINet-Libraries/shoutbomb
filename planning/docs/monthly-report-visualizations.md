@@ -2,7 +2,7 @@
 
 - Created: 2026-11-09
 - Status: in-progress
-- Review state: Visual polish staged for review/commit; awaiting user acceptance.
+- Review state: Layout refinements staged for review/commit; awaiting user acceptance.
 - Goal: Produce a simple, single-column staff report focused on month-over-month service adoption, usage, and growth or decline, defaulting to an all-branches overview with optional branch views. Use the user-approved August, September, and October 2026 named reports, with the new October source replacing the earlier baseline.
 
 ## Context and discovery
@@ -150,8 +150,25 @@ The user explicitly approved resuming T-002 using the three `sb_report_` files, 
 
 - At the user's request, staged the seven polish-related source/test/documentation/plan files, including only the dashboard-specific hunk in `AGENTS.md`. Left unrelated task-workflow edits, raw CSVs, generated HTML, and `.agent-container` unstaged; `git diff --cached --check` passed. Suggested `style: polish monthly report presentation`; no commit or task closure was requested or performed.
 
+## Approved layout refinements and verification (2026-11-13)
+
+- The user approved tightening the header, improving mobile charts and the branch table, grouping supporting information, and using conversational change labels. Moving the chart explanation beside the charts was explicitly deferred; its existing location/text is unchanged. No status change, commit, staging, or task closure was requested.
+- The previous polish is now committed (`1af1ec4`). These new refinements were initially left unstaged; unrelated pre-existing task-workflow edits in `AGENTS.md` and raw/untracked files were preserved.
+- Combined the selected month/branch into a compact header and removed the redundant subtitle/separate branch heading. Preserved the single-column primary metric order, neutral styling, and count/change/chart grouping.
+- Added mobile-specific SVG geometry, larger chart labels, separate month/year lines, and spaced labels for longer timelines. All points and exact table values remain included; resizing and selection/history updates re-render without altering the selected view or missing-value/calendar-gap semantics.
+- Replaced the seven-column branch table with alphabetical branch row groups containing three metric rows and three wrapping columns (metric, count, change). Kept every count/change and clickable branch name; removed the forced 850px width and increased print legibility.
+- Grouped supporting content under Activity details, Branch comparisons, and Sources & interpretation. Keyboard-accessible jump buttons focus/scroll to headings without changing the branch/report fragment or adding history entries; they are hidden when printing.
+- Headline changes now read, for example, “10 more than September 2026 (+14.1%)” or “23 fewer than September 2026 (-65.7%).” Unchanged/missing/zero-base comparisons remain explicit, and tables keep their compact signed values. No parser, calculations, CLI, data, or operational behavior changed.
+- Regenerated `data/monthly-visualizations/index.html` from the three approved named root reports. Verified the entire embedded dataset is identical, source SHA-256 checksums are unchanged, and output mode remains 0600; all three months and 14 branches remain included with the same three source warnings.
+- Passed 26 isolated Node tests (synthetic fixtures), JavaScript syntax checks for the entrypoint/parser/dashboard/tests, visualization CLI help, and `git diff --check`. New tests cover compact header/grouping, jump focus/selection/history, mobile resizing, longer timelines, stacked branch counts, and conversational labels including unknown/zero-base values.
+- Attempted `./check`: Bash syntax passed, then missing ShellCheck and Bats caused exit 127. No browser executable was available, so real-browser appearance/navigation/print inspection remains outstanding. No live services, real `.env`, or downloader/notification state were accessed. Updated `README.md`, `AGENTS.md`, and `CHANGELOG.md`.
+
+## Layout refinement commit preparation (2026-11-13)
+
+- At the user's request, staged the seven layout-related source/test/documentation/plan files, including only the dashboard-specific hunk in `AGENTS.md`. Left unrelated task-workflow edits, raw CSVs, generated HTML, and `.agent-container` unstaged; `git diff --cached --check` passed. No commit or task closure was requested or performed.
+
 ## Next step / acceptance
 
-**Awaiting user acceptance.** Open the regenerated `data/monthly-visualizations/index.html` in a browser and review the warmer styling, count hierarchy, chart labels, numeric tables, mobile layout, all-branches/branch views, report selection, Back/Forward navigation, and printing. Review the staged polish changes and rerun `./check` with Bats and ShellCheck installed. Adjust visual presentation if needed; no further period or library-grouping rules are inferred.
+**Awaiting user acceptance.** Open the regenerated `data/monthly-visualizations/index.html` in a browser and review the compact header, mobile charts, stacked branch comparisons, supporting-section jumps, and conversational headline changes, including all-branches/branch views, month selection, Back/Forward navigation, and printing. Review the staged source changes and rerun `./check` with Bats and ShellCheck installed. The chart explanation remains in its existing location; no further period or library-grouping rules are inferred.
 
 Keep T-002 in-progress until the user explicitly approves closing it. No task closure or archive has been approved.

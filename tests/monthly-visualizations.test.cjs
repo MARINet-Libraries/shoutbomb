@@ -199,6 +199,7 @@ class Element {
   setAttribute(key, value) { this.attributes[key] = value; }
   addEventListener(type, fn) { this.events[type] = fn; }
   fire(type) { this.events[type](); }
+  focus() { this.focused = true; }
 }
 function domHarness(data, hash, bundledScript, template) {
   const nodes = new Map(), events = {}, history = [hash]; let index = 0, current = hash;
@@ -213,14 +214,15 @@ function domHarness(data, hash, bundledScript, template) {
     if (!nodes.has(id)) nodes.set(id, new Element());
     return nodes.get(id);
   }, createElement(tag) { return new Element(tag); }, createElementNS(namespace, tag) { return new Element(tag); } };
-  const win = { location: {}, addEventListener(type, fn) { events[type] = fn; }, print() { win.printed = true; } };
+  const media = { matches: false, addEventListener(type, fn) { this.change = fn; } };
+  const win = { location: {}, matchMedia() { return media; }, addEventListener(type, fn) { events[type] = fn; }, print() { win.printed = true; } };
   Object.defineProperty(win.location, 'hash', { get() { return current; }, set(value) { if (value === current) return; history.splice(++index); history.push(value); current = value; events.hashchange(); } });
   function move(delta) { index += delta; current = history[index]; events.hashchange(); }
   if (bundledScript) {
     doc.getElementById('dashboard-data').textContent = JSON.stringify(data);
     vm.runInNewContext(bundledScript, { window: win, document: doc, URLSearchParams });
   } else dashboard.mount(data, win, doc);
-  return { doc, win, get: doc.getElementById.bind(doc), back() { move(-1); }, forward() { move(1); } };
+  return { doc, win, get: doc.getElementById.bind(doc), back() { move(-1); }, forward() { move(1); }, resize(compact) { media.matches = compact; media.change(); } };
 }
 function dashboardData() {
   const parsed = parser.parseReport(sample);
@@ -234,7 +236,12 @@ function tableBody(h, id) {
   const container = h.get(id.endsWith('-chart') ? id.replace('-chart', '-values') : id);
   return container.children.find(node => node.tagName === 'table').children.find(node => node.tagName === 'tbody');
 }
-function tableRows(h, id) { return tableBody(h, id).children.map(row => row.children.map(cell => cell.textContent)); }
+function tableRows(h, id) {
+  if (id === 'comparison') {
+    return h.get(id).children[0].children.filter(node => node.tagName === 'tbody').map(group => [group.children[0].textContent, ...group.children.slice(1).flatMap(row => row.children.slice(1).map(cell => cell.textContent))]);
+  }
+  return tableBody(h, id).children.map(row => row.children.map(cell => cell.textContent));
+}
 
 test('branch URL restores on load, updates on selection, and supports simulated Back/Forward', () => {
   const data = dashboardData(), h = domHarness(data, '#branch=novato-library&report=older&extra=kept');
@@ -263,7 +270,8 @@ test('missing/unknown URL values, branch links, absent branches, and unconfirmed
   assert.match(h.get('status').textContent, /Unknown branch/);
   assert.match(h.get('status').textContent, /Unknown report/);
   assert.equal(tableRows(h, 'notice-chart').length, 2);
-  const link = tableBody(h, 'comparison').children.find(c => c.textContent.includes('Novato Library')).children[0].children[0];
+  const group = h.get('comparison').children[0].children.find(node => node.tagName === 'tbody' && node.children[0].textContent === 'Novato Library');
+  const link = group.children[0].children[0].children[0];
   h.win.location.hash = link.href;
   assert.equal(h.get('title').textContent, 'Novato Library');
   data.reports[0].branches = [];
@@ -288,7 +296,7 @@ test('overview defaults to system totals, prior-month changes, and alphabetical 
   assert.match(h.get('scope-note').textContent, /3 branches in this report/);
   const summaries = ['registered-summary', 'signups-summary', 'notice-summary'].map(id => h.get(id));
   assert.deepEqual(summaries.map(summary => summary.children[0].textContent), ['13', '1', '55']);
-  assert.equal(summaries[0].children[1].textContent, '0 (0%) vs September 2026');
+  assert.equal(summaries[0].children[1].textContent, 'No change from September 2026 (0%)');
   assert.equal(h.get('notice-total').textContent, '55');
   assert.match(h.get('notice-total-note').textContent, /counted once/);
   assert.deepEqual(tableRows(h, 'comparison').map(row => row[0]), ['Branch, With Comma', 'Novato Library', 'Sausalito Public Library']);
@@ -344,7 +352,7 @@ test('single October report keeps primary counts visible without an empty chart 
   assert.ok(!h.get('period-note').textContent.includes('unconfirmed'));
   assert.match(html, /All branches · Not branch-specific/);
   assert.match(html, /\[hidden\]\{display:none!important\}/);
-  const qualitySection = html.match(/<section class="detail-section" aria-labelledby="quality-heading">([\s\S]*?)<\/section>/)[1];
+  const qualitySection = html.match(/<section class="detail-group" aria-labelledby="quality-heading">([\s\S]*?)<\/section>/)[1];
   assert.match(qualitySection, /id="quality"/);
   assert.ok(!qualitySection.includes('<details'));
   assert.equal(fs.readFileSync(file, 'utf8'), sample);
@@ -483,9 +491,9 @@ test('growth presentation shows current/prior counts, historical warnings, and b
   data.reports[1].totals = { holds: 148, reminders: 19, overdue: 74 };
   data.reports[0].totals = { holds: 147, reminders: 36, overdue: 89 };
   const h = domHarness(data, '');
-  assert.match(h.get('registered-summary').textContent, /\+10 \(\+14.1%\)/);
-  assert.match(h.get('signups-summary').textContent, /-23 \(-65.7%\)/);
-  assert.match(h.get('notice-summary').textContent, /-31 \(-11.4%\)/);
+  assert.match(h.get('registered-summary').textContent, /10 more than September 2026 \(\+14.1%\)/);
+  assert.match(h.get('signups-summary').textContent, /23 fewer than September 2026 \(-65.7%\)/);
+  assert.match(h.get('notice-summary').textContent, /31 fewer than September 2026 \(-11.4%\)/);
   assert.deepEqual(tableRows(h, 'registered-chart'), [['September 2026', '71', 'Not comparable'], ['October 2026', '81', '+10 (+14.1%)']]);
   assert.match(h.get('quality').textContent, /September 2026: 1 signup preserved as unattributed/);
   const globalKeywords = h.get('keyword-chart').textContent;
@@ -512,8 +520,8 @@ test('visual polish preserves neutral changes, aligns numeric tables, and highli
   data.reports[0].registrations = { users: 71, signups: 35 };
   data.reports[1].registrations = { users: 81, signups: 12 };
   const h = domHarness(data, '', undefined, html);
-  assert.equal(h.get('registered-summary').children[1].textContent, '+10 (+14.1%) vs September 2026');
-  assert.equal(h.get('signups-summary').children[1].textContent, '-23 (-65.7%) vs September 2026');
+  assert.equal(h.get('registered-summary').children[1].textContent, '10 more than September 2026 (+14.1%)');
+  assert.equal(h.get('signups-summary').children[1].textContent, '23 fewer than September 2026 (-65.7%)');
   // Increases and decreases use the same neutral presentation, not success/error colors.
   assert.equal(h.get('registered-summary').children[1].className, h.get('signups-summary').children[1].className);
   assert.match(style, /\.metric-summary span\{[^}]*color:var\(--muted\)/);
@@ -521,7 +529,7 @@ test('visual polish preserves neutral changes, aligns numeric tables, and highli
   for (const id of ['registered-values', 'comparison', 'notices', 'items', 'keywords', 'sources']) {
     const table = h.get(id).children.find(node => node.tagName === 'table');
     const header = table.children.find(node => node.tagName === 'thead').children[0];
-    const row = tableBody(h, id).children[0];
+    const row = tableBody(h, id).children[id === 'comparison' ? 1 : 0];
     for (const cells of [header.children, row.children]) {
       assert.notEqual(cells[0].className, 'numeric');
       assert.ok(cells.slice(1).every(cell => id === 'sources' ? cell.className !== 'numeric' : cell.className === 'numeric'));
@@ -541,7 +549,7 @@ test('visual polish preserves neutral changes, aligns numeric tables, and highli
   assert.ok(!/@import|url\(/i.test(style)); // No external fonts, images, or stylesheets.
   const printStyle = style.slice(style.indexOf('@media print'));
   assert.match(printStyle, /body\{[^}]*background:#fff/);
-  assert.match(printStyle, /\.toolbar\{display:none\}/);
+  assert.match(printStyle, /\.toolbar,\.detail-jumps\{display:none\}/);
   assert.match(printStyle, /thead th\{background:transparent\}/);
 });
 
@@ -553,7 +561,7 @@ test('plain report stacks three primary metric sections before all supporting in
   const html = fs.readFileSync(out, 'utf8'), data = embedded(html);
   const js = html.match(/<script>\n(.*?)<\/script>/s)[1];
   const h = domHarness(data, '', js, html);
-  const ordered = ['registered-metric', 'signups-metric', 'notices-metric', 'additional-details', 'keyword-metric', 'values-heading', 'branches-heading', 'breakdown-heading', 'items-heading', 'system-heading', 'quality-heading'];
+  const ordered = ['registered-metric', 'signups-metric', 'notices-metric', 'additional-details', 'activity-heading', 'keyword-metric', 'values-heading', 'breakdown-heading', 'items-heading', 'system-heading', 'branches-heading', 'quality-heading'];
   const positions = ordered.map(id => html.indexOf(`id="${id}"`));
   assert.ok(positions.every((position, i) => position > -1 && (!i || position > positions[i - 1])));
   const primary = html.slice(html.indexOf('<div id="trend-section">'), html.indexOf('<section id="additional-details"'));
@@ -577,4 +585,104 @@ test('plain report stacks three primary metric sections before all supporting in
   assert.equal(h.get('keyword-summary').children[0].textContent, '3');
   assert.match(h.get('quality').textContent, /Language counts/);
   for (const id of ['comparison', 'notices', 'items', 'keywords', 'sources']) assert.ok(tableBody(h, id).children.length > 0);
+});
+
+test('compact header and supporting-section jumps preserve selected branch/report and history', () => {
+  const html = fs.readFileSync(path.resolve(__dirname, '../lib/monthly-dashboard.html'), 'utf8');
+  const h = domHarness(dashboardData(), '#branch=novato-library&report=older', undefined, html);
+  const context = html.match(/<p class="report-context">([\s\S]*?)<\/p>/)[1];
+  assert.match(context, /id="heading-period"/);
+  assert.match(context, /id="title"/);
+  assert.ok(!html.includes('id="subtitle"'));
+  assert.equal(h.get('title').textContent, 'Novato Library');
+  assert.equal(h.get('heading-period').textContent, 'September 2026');
+  const before = h.win.location.hash;
+  for (const [button, target] of [['jump-activity', 'activity-heading'], ['jump-branches', 'branches-heading'], ['jump-sources', 'quality-heading']]) {
+    assert.match(html, new RegExp(`id="${target}"[^>]*tabindex="-1"`));
+    h.get(button).fire('click');
+    assert.equal(h.get(target).focused, true);
+    assert.equal(h.win.location.hash, before);
+  }
+  h.get('report').value = 'latest'; h.get('report').fire('change');
+  h.get('jump-sources').fire('click');
+  h.back();
+  assert.equal(h.win.location.hash, before);
+  assert.equal(h.get('title').textContent, 'Novato Library');
+});
+
+test('mobile charts reflow without shrinking desktop geometry or changing selection and data', () => {
+  const h = domHarness(dashboardData(), '#branch=novato-library&report=older');
+  const beforeHash = h.win.location.hash, beforeValues = tableRows(h, 'registered-chart');
+  const plot = () => h.get('registered-chart').children.find(node => node.tagName === 'svg');
+  assert.equal(plot().attributes.viewBox, '0 0 600 250');
+  h.resize(true);
+  assert.equal(plot().attributes.viewBox, '0 0 320 265');
+  assert.equal(h.win.location.hash, beforeHash);
+  assert.deepEqual(tableRows(h, 'registered-chart'), beforeValues);
+  assert.deepEqual(plot().children.filter(node => node.attributes.class === 'axis-label selected').map(node => node.textContent), ['Sep', '2026']);
+  const circles = plot().children.filter(node => node.tagName === 'circle');
+  assert.deepEqual(circles.map(node => node.attributes.cx), ['48', '292']);
+  assert.ok(circles.every(node => Number.isFinite(Number(node.attributes.cy))));
+  h.win.location.hash = '#branch=novato-library&report=latest';
+  assert.deepEqual(plot().children.filter(node => node.attributes.class === 'axis-label selected').map(node => node.textContent), ['Oct', '2026']);
+  h.back();
+  assert.equal(plot().attributes.viewBox, '0 0 320 265');
+  h.resize(false);
+  assert.equal(plot().attributes.viewBox, '0 0 600 250');
+  assert.deepEqual(tableRows(h, 'registered-chart'), beforeValues);
+  const geometry = dashboard.chartGeometry([{ period: '2026-09', value: 0 }, { period: '2026-11', value: 2 }], true);
+  assert.deepEqual(geometry.segments.map(segment => segment.length), [1, 1]);
+  assert.equal(geometry.points[0].y, 205);
+});
+
+test('long mobile timelines limit labels while keeping the selected month and all points', () => {
+  const data = dashboardData(), baseline = data.reports[0];
+  data.reports = Array.from({ length: 12 }, (_, i) => ({ ...baseline, id: `month-${i + 1}`, period: `2026-${String(i + 1).padStart(2, '0')}` }));
+  const h = domHarness(data, '#report=month-2');
+  h.resize(true);
+  const plot = h.get('registered-chart').children.find(node => node.tagName === 'svg');
+  const labels = plot.children.filter(node => node.tagName === 'text' && node.attributes.y === '232');
+  assert.ok(labels.length <= 3);
+  assert.equal(labels.find(node => node.attributes.class === 'axis-label selected').textContent, 'Feb');
+  const xs = labels.map(node => Number(node.attributes.x)).sort((a, b) => a - b);
+  assert.ok(xs.every((x, i) => !i || x - xs[i - 1] >= 75));
+  assert.equal(plot.children.filter(node => node.tagName === 'circle').length, 12);
+  assert.equal(plot.children.filter(node => node.attributes.class === 'point-label').length, 1);
+  assert.equal(tableRows(h, 'registered-chart').length, 12);
+});
+
+test('branch comparison groups retain every metric and change in a wrapping three-column table', () => {
+  const html = fs.readFileSync(path.resolve(__dirname, '../lib/monthly-dashboard.html'), 'utf8');
+  const h = domHarness(dashboardData(), '', undefined, html);
+  const table = h.get('comparison').children[0];
+  const groups = table.children.filter(node => node.tagName === 'tbody');
+  assert.equal(groups.length, 3);
+  assert.equal(table.children.find(node => node.tagName === 'thead').children[0].children.length, 3);
+  for (const group of groups) {
+    assert.equal(group.children.length, 4);
+    const heading = group.children[0].children[0];
+    assert.equal(heading.attributes.scope, 'rowgroup');
+    assert.equal(heading.attributes.colspan, '3');
+    assert.ok(heading.children[0].href.includes('report=latest'));
+    assert.deepEqual(group.children.slice(1).map(row => row.children[0].textContent), ['Registered patrons', 'New signups', 'Text notices']);
+    assert.ok(group.children.slice(1).every(row => row.children.length === 3));
+  }
+  assert.deepEqual(tableRows(h, 'comparison').find(row => row[0] === 'Novato Library'), ['Novato Library', '12', '0 (0%)', '1', '0 (0%)', '55', '0 (0%)']);
+  assert.ok(tableRows(h, 'comparison').find(row => row[0] === 'Sausalito Public Library').includes('Not reported'));
+  const style = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+  assert.ok(!/min-width:850px/.test(style));
+  assert.match(style, /#comparison th,#comparison td\{[^}]*white-space:normal/);
+  assert.match(style, /#comparison table\{table-layout:fixed\}/);
+});
+
+test('headline changes use neutral conversational labels without altering compact table calculations', () => {
+  assert.equal(dashboard.summaryChange(81, 71, 'September 2026'), '10 more than September 2026 (+14.1%)');
+  assert.equal(dashboard.summaryChange(12, 35, 'September 2026'), '23 fewer than September 2026 (-65.7%)');
+  assert.equal(dashboard.summaryChange(5, 5, 'September 2026'), 'No change from September 2026 (0%)');
+  assert.equal(dashboard.summaryChange(0, 5, 'September 2026'), '5 fewer than September 2026 (-100%)');
+  assert.equal(dashboard.summaryChange(4, 0, 'September 2026'), '4 more than September 2026 (percentage undefined from zero)');
+  assert.equal(dashboard.summaryChange(0, 0, 'September 2026'), 'No change from September 2026 (percentage undefined from zero)');
+  assert.equal(dashboard.summaryChange(undefined, 5, 'September 2026'), 'Not comparable with September 2026');
+  assert.equal(dashboard.summaryChange(5, undefined, null), 'Not comparable · previous calendar month unavailable');
+  assert.equal(dashboard.change(81, 71).text, '+10 (+14.1%)');
 });

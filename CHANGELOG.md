@@ -2,6 +2,8 @@
 
 ## 2026-11-13
 
+- Tightened the monthly dashboard header, added mobile-specific chart geometry/readable labels, and replaced wide branch comparisons with three-column metric rows grouped alphabetically by branch. Grouped supporting sections with selection-preserving jump controls and made headline changes conversational; exact table values, source data, parser/CLI, and operational behavior are unchanged.
+- Added isolated coverage for compact charts/resizing, longer mobile timelines, grouped branch comparisons, headline wording, and keyboard jump targets without disrupting selection/history. Regenerated the approved three-month dashboard with identical embedded data.
 - Polished the single-column monthly report with warmer off-white/navy/teal styling, larger counts, tighter metric grouping, lighter chart grids, and selected-month axis emphasis. Refined controls and right-aligned numeric tables; changes remain neutrally styled and printing stays plain white, with no data, parser, CLI, or selection/history changes.
 - Added isolated coverage for numeric/text table alignment, neutral increase/decrease styling, selected-month highlighting through navigation, offline styling, and print rules.
 - Simplified the monthly report to a plain, single-column layout with registered patrons, signups, and notices stacked vertically, each with its count, prior-month change, and chart. Moved keyword usage, exact-value tables, branch/detail tables, and source notes below the primary metrics; removed cards and metric columns without changing report data, CLI behavior, or URL selection.
