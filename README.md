@@ -274,7 +274,7 @@ Run manually, or use the daily monitored wrapper:
   --arrival-healthcheck-url-env HEALTHCHECKS_MONTHLY_ARRIVAL_URL
 ```
 
-The downloader lists SFTP `/monthly_report` using the existing SSH credentials and strict host-key checking. It accepts basenames of the form `sb_generate_monthly_report_<identifier>_YYYY-MM-DD_HH_MM_SS.csv`; the identifier may contain ASCII letters, digits, underscores, and hyphens. Other entries are ignored. The filename timestamp is not interpreted as the reporting period.
+The downloader lists SFTP `/monthly_report` using the existing SSH credentials and strict host-key checking. It accepts only basenames of the form `sb_report_Month_YYYY_<identifier>_YYYY-MM-DD_HH_MM_SS.csv`, for example `sb_report_August_2026_2bbb0dbd32_2026-11-10_16_02_39.csv`, with a full English month name. The identifier may contain ASCII letters, digits, underscores, and hyphens. Other entries, including legacy `sb_generate_monthly_report_...` names, are ignored. The Month_YYYY label identifies activity; the trailing timestamp identifies generation.
 
 Files are saved under their original names in `data/monthly-reports/`. All missing matching files are downloaded, including historical files on the first run. Existing regular, non-symlink local files skip downloading by filename, even if their remote contents change; published filenames are assumed immutable until Shoutbomb confirms its correction policy. No CSV schema or reporting-period validation is performed.
 
@@ -292,7 +292,7 @@ The service logs under `shoutbomb-download-monthly-reports` and uses the shared 
 
 #### Separate monthly-arrival monitoring
 
-Enable `--arrival-healthcheck-url-env HEALTHCHECKS_MONTHLY_ARRIVAL_URL` to notify a second check when a **newly downloaded** file's filename date is in the current calendar month. This is an arrival proxy, not a claim about the CSV's reporting period. The calendar month uses the system timezone (or `TZ` in `.env`). Historical/future-month backfills and existing local files do not count. Several eligible downloads in one run produce one arrival success ping; additional new eligible files can produce another. The two resolved check URLs must differ.
+Enable `--arrival-healthcheck-url-env HEALTHCHECKS_MONTHLY_ARRIVAL_URL` to notify a second check when a **newly downloaded** file's **trailing generation date** is in the current calendar month. The Month_YYYY activity label does not determine arrival eligibility: an August activity report generated and downloaded in November counts as a November arrival. This preserves the generation-month arrival proxy, not a guarantee that the expected activity report has arrived. The calendar month uses the system timezone (or `TZ` in `.env`). Files with historical/future generation months and existing local files do not count. Several eligible downloads in one run produce one arrival success ping; additional new eligible files can produce another. The two resolved check URLs must differ.
 
 Only arrival **success** pings go to this second check, never daily `/start` or `/fail` pings. Daily no-op successes do not refresh it. Completed eligible downloads still count if a remote move, another transfer, or the logging pipeline fails; the daily check continues to reflect that failure independently. Omit the arrival option to retain daily-only operation.
 
@@ -329,33 +329,25 @@ Line charts have labeled count axes starting at zero and visible point values fo
 
 #### Reporting months and trends
 
-By default the filename date is shown as a generation date with **activity month unconfirmed**; the script does not assume that a November file reports October activity. For a confirmed reporting month on one file:
+Activity months are assigned **automatically from Month_YYYY filename labels**, not generation timestamps. For example, `sb_report_August_2026_<identifier>_2026-11-10_16_02_39.csv` is August 2026 activity generated in November. Several files generated on the same day remain separate activity months and are sorted by those labels:
+
+```bash
+./visualize-monthly-reports data/monthly-reports/sb_report_*.csv
+```
+
+Full English month names are supported. Legacy filename inference and the `--previous-month`/`--named-periods` options have been removed; those options now return usage error 2. No month is inferred from a generation date. For a renamed input without a supported label, supply `--period YYYY-MM`; otherwise the script fails without replacing the existing output. This option also permits an explicit override for one input:
 
 ```bash
 ./visualize-monthly-reports --period 2026-10 --output /tmp/october-dashboard.html /path/to/report.csv
 ```
 
-For user-confirmed named exports such as `sb_report_August_2026_<identifier>_2026-11-10_16_02_39.csv`, explicitly use the **Month_YYYY label**, not the November generation timestamp:
-
-```bash
-./visualize-monthly-reports --named-periods sb_report_*.csv
-```
-
-`--named-periods` requires that named filename family, accepts full English month names, and assigns/sorts each file by its labeled activity month. It does not change default inference or the SFTP downloader's supported filename family. Supply only the authoritative report for each month; the script does not automatically choose between conflicting corrected versions.
-
-Only if you have confirmed the convention that legacy reports describe the previous calendar month, explicitly opt into filename-date assignment:
-
-```bash
-./visualize-monthly-reports --previous-month data/monthly-reports/*.csv
-```
-
-`--previous-month` requires legacy `sb_generate_monthly_report_...` dated filenames and handles year boundaries; it rejects named reports to avoid replacing their explicit month label with a generation-date assumption. At least two explicitly assigned months are needed to draw a trend; the primary metric counts remain visible when no trend is available. The report selector is hidden when only one report is included. `--period` requires exactly one file. All three period modes are mutually exclusive; no general reporting-month convention is inferred by default.
+Supply only the authoritative report for each month; the script does not automatically choose between conflicting corrected versions. At least two assigned months are needed to draw a trend; primary counts remain visible when only one month is available. The report selector is hidden when only one report is included. `--period` requires exactly one file.
 
 #### Parsing and validation
 
 The parser understands branch sections, CSV-like rows (including quoted commas/escaped quotes), dot/equals section separators, prose and CSV reminder summaries, both branch-total/signup formats, prose/CSV registration totals, inline/CSV source percentages, and successful/failed renewal counts. It handles UTF-8 BOM and CRLF; quoted multiline fields are unsupported and fail with a diagnostic. Repeated reminder summaries are counted once, absent metrics remain **not reported** rather than zero, and registration-only branches are retained. A signup row without a branch is retained as unattributed and flagged; it is never assigned to an invented branch or added again to the source-reported system signup total. Item counts and message counts are never added together. No inferred renewal rates, language shares, or adoption rates are calculated.
 
-Source inconsistencies and unknown lines are reported as warnings in stderr and the dashboard; unknown text itself is not copied into diagnostics. Review warnings before relying on the output. Malformed recognized numeric/CSV rows, conflicting repeated metrics, and inputs without supported branch data fail before replacing an existing dashboard. Duplicate normalized reports for the same activity month are skipped; conflicting reports for that month fail so you can explicitly choose the correct source. Without a confirmed month, this check groups reports by filename date (or one undated group), not an inferred activity period.
+Source inconsistencies and unknown lines are reported as warnings in stderr and the dashboard; unknown text itself is not copied into diagnostics. Review warnings before relying on the output. Malformed recognized numeric/CSV rows, conflicting repeated metrics, and inputs without supported branch data fail before replacing an existing dashboard. Duplicate normalized reports for the same activity month are skipped; conflicting reports for that month fail so you can explicitly choose the correct source. All CLI inputs must have a labeled or explicitly assigned activity month; generation dates are never used for duplicate grouping.
 
 Exit status is 0 on success, 1 on input/output/format errors, and 2 on usage errors. A missing Node.js runtime prevents the executable from starting. This is a local visualization tool, not a monitored service or a new uploadable SQL report.
 

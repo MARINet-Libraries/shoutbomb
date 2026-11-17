@@ -7,8 +7,8 @@ setup() {
   setup_project_fixture
   write_ssh_env
   monthly_dir="$TEST_PROJECT/data/monthly-reports"
-  first=sb_generate_monthly_report_feb88521e8_2026-11-05_00_10_18.csv
-  older=sb_generate_monthly_report_other-id_2026-10-04_12_00_00.csv
+  first=sb_report_August_2026_2bbb0dbd32_2026-11-10_16_02_39.csv
+  older=sb_report_September_2026_other-id_2026-10-04_12_00_00.csv
   mkdir -p -- "$MOCK_STATE_DIR/monthly-remote"
 }
 
@@ -69,17 +69,34 @@ EOF
   add_remote_file "$first"
   printf '%s\n' "$first" '../escape.csv' \
     "/other/$first" 'unexpected.csv' \
-    'sb_generate_monthly_report_$(touch hacked)_2026-11-05_00_10_18.csv' \
+    'sb_report_August_2026_$(touch hacked)_2026-11-10_16_02_39.csv' \
+    'sb_generate_monthly_report_old_2026-11-05_00_10_18.csv' \
+    'sb_report_Nonesuch_2026_id_2026-11-10_16_02_39.csv' \
+    'sb_report_Aug_2026_id_2026-11-10_16_02_39.csv' \
     > "$MOCK_STATE_DIR/monthly-listing"
 
   run "$TEST_PROJECT/download-monthly-reports"
 
   assert_status 0
-  assert_output_contains 'downloaded=1 skipped=0 ignored=4 failed=0'
+  assert_output_contains 'downloaded=1 skipped=0 ignored=7 failed=0'
   assert_call_count sftp 4
   assert_file_exists "$monthly_dir/$first"
   assert_file_not_exists "$TEST_PROJECT/hacked"
   assert_file_not_exists "$TEST_PROJECT/data/escape.csv"
+}
+
+@test "monthly download accepts all full English activity months independently of generation date" {
+  local month name
+  for month in January February March April May June July August September October November December; do
+    name="sb_report_${month}_2025_safe-id_123_2026-11-10_16_02_39.csv"
+    add_remote_file "$name"
+  done
+
+  run "$TEST_PROJECT/download-monthly-reports"
+
+  assert_status 0
+  assert_output_contains 'downloaded=12 skipped=0 ignored=0 failed=0 moved=12'
+  assert_call_count sftp 37
 }
 
 @test "monthly download treats empty listing as successful no-op" {

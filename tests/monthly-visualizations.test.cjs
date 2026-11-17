@@ -53,8 +53,9 @@ function fixture(t) {
   fs.writeFileSync(path.join(dir, '.env'), 'exit 99\n');
   return dir;
 }
-function input(dir, date = '2026-11-05', text = sample, suffix = 'test') {
-  const file = path.join(dir, `sb_generate_monthly_report_${suffix}_${date}_00_10_18.csv`);
+function input(dir, period = '2026-10', text = sample, suffix = 'test') {
+  const month = new Date(`${period}-01T00:00:00Z`).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+  const file = path.join(dir, `sb_report_${month}_${period.slice(0, 4)}_${suffix}_2026-11-05_00_10_18.csv`);
   fs.writeFileSync(file, text); return file;
 }
 function run(dir, args) { return spawnSync(process.execPath, [cli, ...args], { cwd: dir, encoding: 'utf8' }); }
@@ -98,12 +99,13 @@ test('malformed metrics and conflicting repetitions fail rather than silently ch
   assert.ok(mismatch.warnings.some(w => w.includes('Notice components differ')));
 });
 
-test('report periods are explicit and calendar arithmetic handles January', () => {
-  assert.equal(parser.generatedDate('sb_generate_monthly_report_test_2026-11-05_00_10_18.csv'), '2026-11-05');
+test('named activity months are separate from generation dates and legacy filenames are not recognized', () => {
+  assert.equal(parser.generatedDate('sb_report_December_2025_test_2026-01-05_00_10_18.csv'), '2026-01-05');
+  assert.equal(parser.namedPeriod('sb_report_December_2025_test_2026-01-05_00_10_18.csv'), '2025-12');
   assert.equal(parser.generatedDate('renamed.csv'), null);
-  assert.throws(() => parser.generatedDate('sb_generate_monthly_report_test_2026-02-30_00_10_18.csv'), /invalid filename date/);
-  assert.equal(parser.previousMonth('2026-01-05'), '2025-12');
-  assert.equal(parser.previousMonth('2026-11-05'), '2026-10');
+  assert.equal(parser.generatedDate('sb_generate_monthly_report_test_2026-11-05_00_10_18.csv'), null);
+  assert.equal(parser.namedPeriod('sb_generate_monthly_report_test_2026-11-05_00_10_18.csv'), null);
+  assert.throws(() => parser.generatedDate('sb_report_January_2026_test_2026-02-30_00_10_18.csv'), /invalid filename date/);
   assert.ok(!parser.validPeriod('2026-13'));
   assert.ok(!parser.validPeriod('0000-01'));
 });
@@ -117,13 +119,14 @@ test('branch IDs are stable, reserved IDs and slug collisions are handled', () =
   assert.deepEqual(parser.branchIds([...names].reverse()).reverse(), ids);
 });
 
-test('CLI generates a private offline HTML file, without changing input or interpreting month by default', t => {
+test('CLI generates a private offline HTML file and defaults to the filename activity month', t => {
   const dir = fixture(t), file = input(dir), out = path.join(dir, 'output', 'report.html');
   const result = run(dir, ['--output', out, file]);
   assert.equal(result.status, 0, result.stderr);
   const html = fs.readFileSync(out, 'utf8'), data = embedded(html);
   assert.equal(data.reports[0].date, '2026-11-05');
-  assert.equal(data.reports[0].period, null);
+  assert.equal(data.reports[0].period, '2026-10');
+  assert.equal(data.reports[0].periodMethod, 'named');
   assert.equal(fs.readFileSync(file, 'utf8'), sample);
   assert.equal(fs.statSync(out).mode & 0o777, 0o600);
   assert.ok(!/<(?:script|link)[^>]+(?:src|href)=/i.test(html));
@@ -132,7 +135,7 @@ test('CLI generates a private offline HTML file, without changing input or inter
   assert.doesNotThrow(() => new vm.Script(js));
   const runtime = domHarness(data, '#branch=novato-library', js, html);
   assert.equal(runtime.get('title').textContent, 'Novato Library');
-  assert.match(runtime.get('period-note').textContent, /not been confirmed/);
+  assert.match(runtime.get('period-note').textContent, /automatic.*not the generation date/);
   assert.equal(runtime.get('registered-summary').children[0].textContent, '12');
   assert.equal(runtime.get('trend-section').hidden, false);
   assert.ok(!runtime.get('registered-chart').children.some(node => node.tagName === 'svg'));
@@ -142,7 +145,7 @@ test('CLI generates a private offline HTML file, without changing input or inter
 test('embedded data escapes script termination and source text is rendered as text only', t => {
   const dir = fixture(t);
   const payload = '</script><img src=x onerror=alert(1)> $& /*__DASHBOARD_SCRIPT__*/';
-  const file = input(dir, '2026-11-05', sample.replaceAll('Novato Library', () => payload));
+  const file = input(dir, '2026-10', sample.replaceAll('Novato Library', () => payload));
   const out = path.join(dir, 'report.html');
   const result = run(dir, ['--output', out, file]);
   assert.equal(result.status, 0, result.stderr);
@@ -154,7 +157,7 @@ test('embedded data escapes script termination and source text is rendered as te
 test('CLI validates options, filenames, and input/output aliases; failures preserve existing output', t => {
   const dir = fixture(t), file = input(dir), out = path.join(dir, 'report.html');
   fs.writeFileSync(out, 'previous good report');
-  for (const args of [[], ['--wat'], ['--help', file], ['--output'], ['--period', '2026-13', file], ['--period', '2026-10', '--previous-month', file], ['--period', '2026-10', file, file]]) {
+  for (const args of [[], ['--wat'], ['--help', file], ['--output'], ['--period', '2026-13', file], ['--previous-month', file], ['--named-periods', file], ['--period', '2026-10', file, file]]) {
     assert.equal(run(dir, args).status, 2, JSON.stringify(args));
   }
   assert.equal(run(dir, ['--help']).status, 0);
@@ -163,27 +166,30 @@ test('CLI validates options, filenames, and input/output aliases; failures prese
     if (alias.endsWith('hardlink.csv')) fs.linkSync(file, alias);
     assert.equal(run(dir, ['--output', alias, file]).status, 1);
   }
-  const invalid = input(dir, '2026-10-05', 'broken');
+  const invalid = input(dir, '2026-09', 'broken');
   assert.equal(run(dir, ['--output', out, invalid]).status, 1);
   assert.equal(fs.readFileSync(out, 'utf8'), 'previous good report');
   const renamed = path.join(dir, 'renamed.csv'); fs.writeFileSync(renamed, sample);
-  assert.equal(run(dir, ['--previous-month', '--output', out, renamed]).status, 1);
+  const unassigned = run(dir, ['--output', out, renamed]);
+  assert.equal(unassigned.status, 1);
+  assert.match(unassigned.stderr, /expected sb_report_Month_YYYY_.*--period/);
+  assert.equal(fs.readFileSync(out, 'utf8'), 'previous good report');
   assert.equal(run(dir, ['--period', '2026-10', '--output', out, renamed]).status, 0);
   assert.equal(embedded(fs.readFileSync(out, 'utf8')).reports[0].period, '2026-10');
 });
 
 test('multiple reports sort by confirmed month, skip duplicate reports, and reject conflicting corrections', t => {
-  const dir = fixture(t), november = input(dir), october = input(dir, '2026-10-05');
+  const dir = fixture(t), october = input(dir), september = input(dir, '2026-09');
   const reordered = sample.replace('Hold text notices sent,for the month,25\nHold text reminders notices sent ,for the month,2', 'Hold text reminders notices sent ,for the month,2\nHold text notices sent,for the month,25');
-  const duplicate = input(dir, '2026-11-06', reordered, 'duplicate');
+  const duplicate = input(dir, '2026-10', reordered, 'duplicate');
   const out = path.join(dir, 'report.html');
-  const result = run(dir, ['--previous-month', '--output', out, november, october, duplicate]);
+  const result = run(dir, ['--output', out, october, september, duplicate]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stderr, /Skipped duplicate/);
   assert.deepEqual(embedded(fs.readFileSync(out, 'utf8')).reports.map(r => r.period), ['2026-09', '2026-10']);
   const before = fs.readFileSync(out, 'utf8');
   fs.writeFileSync(duplicate, sample.replace('for the month,25', 'for the month,26'));
-  const failed = run(dir, ['--previous-month', '--output', out, november, duplicate]);
+  const failed = run(dir, ['--output', out, october, duplicate]);
   assert.equal(failed.status, 1);
   assert.match(failed.stderr, /conflicting reports/);
   assert.equal(fs.readFileSync(out, 'utf8'), before);
@@ -419,7 +425,7 @@ test('equals separators and CSV reminder/totals/signup variants preserve success
   assert.throws(() => parser.parseReport(text.replace('Hold text reminders sent,for the month,2', 'Hold text reminders sent,for the month,3')), /conflicting repeated metric/);
 });
 
-test('named-month assignment is explicit, independent of generation dates, and rejects incompatible modes', t => {
+test('named-month assignment is automatic across same-generation-date reports and corrections still conflict', t => {
   const dir = fixture(t), august = namedInput(dir, 'August', variantSample()), september = namedInput(dir, 'September'), october = namedInput(dir, 'October');
   const out = path.join(dir, 'report.html');
   assert.equal(parser.namedPeriod(august), '2026-08');
@@ -427,9 +433,7 @@ test('named-month assignment is explicit, independent of generation dates, and r
   assert.equal(parser.namedPeriod('renamed.csv'), null);
   assert.throws(() => parser.namedPeriod('sb_report_Nonesuch_2026_id_2026-11-10_16_02_39.csv'), /invalid named reporting month/);
   assert.throws(() => parser.generatedDate('sb_report_August_2026_id_2026-02-30_16_02_39.csv'), /invalid filename date/);
-  assert.equal(run(dir, ['--output', out, october]).status, 0);
-  assert.equal(embedded(fs.readFileSync(out, 'utf8')).reports[0].period, null);
-  const result = run(dir, ['--named-periods', '--output', out, october, august, september]);
+  const result = run(dir, ['--output', out, october, august, september]);
   assert.equal(result.status, 0, result.stderr);
   const html = fs.readFileSync(out, 'utf8'), data = embedded(html);
   assert.deepEqual(data.reports.map(r => r.period), ['2026-08', '2026-09', '2026-10']);
@@ -437,20 +441,41 @@ test('named-month assignment is explicit, independent of generation dates, and r
   const js = html.match(/<script>\n(.*?)<\/script>/s)[1];
   const h = domHarness(data, '', js, html);
   assert.equal(h.get('heading-period').textContent, 'October 2026');
-  assert.match(h.get('period-note').textContent, /not the generation date/);
+  assert.match(h.get('period-note').textContent, /automatic.*not the generation date/);
   assert.equal(tableRows(h, 'registered-chart').length, 3);
   assert.ok(h.get('quality').textContent.includes('unattributed'));
-  for (const args of [['--named-periods', '--previous-month', october], ['--named-periods', '--period', '2026-10', october]]) assert.equal(run(dir, args).status, 2);
-  assert.equal(run(dir, ['--named-periods', '--output', out, input(dir)]).status, 1);
-  assert.equal(run(dir, ['--previous-month', '--output', out, august]).status, 1);
-  // Same-date generation does not establish a reporting month without explicit assignment.
-  assert.equal(run(dir, ['--output', out, august, october]).status, 1);
   const duplicate = namedInput(dir, 'October', sample, 'duplicate');
-  assert.match(run(dir, ['--named-periods', '--output', out, october, duplicate]).stderr, /Skipped duplicate/);
+  assert.match(run(dir, ['--output', out, october, duplicate]).stderr, /Skipped duplicate/);
   fs.writeFileSync(duplicate, sample.replace('for the month,25', 'for the month,26'));
   const before = fs.readFileSync(out, 'utf8');
-  assert.equal(run(dir, ['--named-periods', '--output', out, october, duplicate]).status, 1);
+  assert.equal(run(dir, ['--output', out, october, duplicate]).status, 1);
   assert.equal(fs.readFileSync(out, 'utf8'), before);
+});
+
+test('default filename assignment rejects missing or invalid labels without guessing from generation dates', t => {
+  const dir = fixture(t), out = path.join(dir, 'report.html');
+  fs.writeFileSync(out, 'previous good report');
+  for (const name of [
+    'renamed.csv',
+    'sb_generate_monthly_report_test_2026-11-05_00_10_18.csv',
+    'sb_report_Nonesuch_2026_test_2026-11-10_16_02_39.csv',
+    'sb_report_Aug_2026_test_2026-11-10_16_02_39.csv',
+    'sb_report_October_0000_test_2026-11-10_16_02_39.csv',
+    'sb_report_October_2026_test_2026-02-30_16_02_39.csv',
+  ]) {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, sample);
+    const result = run(dir, ['--output', out, file]);
+    assert.equal(result.status, 1, name);
+    assert.equal(fs.readFileSync(out, 'utf8'), 'previous good report');
+  }
+  const december = input(dir, '2025-12'), january = input(dir, '2026-01');
+  const result = run(dir, ['--output', out, january, december]);
+  assert.equal(result.status, 0, result.stderr);
+  const data = embedded(fs.readFileSync(out, 'utf8'));
+  assert.deepEqual(data.reports.map(r => r.period), ['2025-12', '2026-01']);
+  assert.ok(data.reports.every(r => r.date === '2026-11-05'));
+  assert.equal(dashboard.previousReport(data.reports, data.reports[1]).id, data.reports[0].id);
 });
 
 test('month-over-month changes distinguish decline, unknown data, and undefined percentages from zero', () => {
@@ -554,9 +579,9 @@ test('visual polish preserves neutral changes, aligns numeric tables, and highli
 });
 
 test('plain report stacks three primary metric sections before all supporting information', t => {
-  const dir = fixture(t), first = input(dir, '2026-10-05'), second = input(dir);
+  const dir = fixture(t), first = input(dir, '2026-09'), second = input(dir);
   const out = path.join(dir, 'simple.html');
-  const result = run(dir, ['--previous-month', '--output', out, second, first]);
+  const result = run(dir, ['--output', out, second, first]);
   assert.equal(result.status, 0, result.stderr);
   const html = fs.readFileSync(out, 'utf8'), data = embedded(html);
   const js = html.match(/<script>\n(.*?)<\/script>/s)[1];

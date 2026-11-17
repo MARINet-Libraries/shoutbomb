@@ -7,9 +7,9 @@ setup() {
   write_ssh_env
   monthly_dir="$TEST_PROJECT/data/monthly-reports"
   receipts="$monthly_dir/.arrival-state/pending"
-  current=sb_generate_monthly_report_feb88521e8_2026-11-05_00_10_18.csv
-  older=sb_generate_monthly_report_other-id_2026-10-04_12_00_00.csv
-  future=sb_generate_monthly_report_other-id_2026-12-04_12_00_00.csv
+  current=sb_report_October_2026_feb88521e8_2026-11-05_00_10_18.csv
+  older=sb_report_November_2026_other-id_2026-10-04_12_00_00.csv
+  future=sb_report_November_2026_other-id_2026-12-04_12_00_00.csv
   export MOCK_DATE_MONTH=2026-11
   mkdir -p -- "$MOCK_STATE_DIR/monthly-remote"
   cat >> "$TEST_PROJECT/.env" <<EOF
@@ -53,6 +53,30 @@ poll() {
   assert_status 0
   assert_call_count curl 5
   assert_call_count sftp 11
+}
+
+@test "arrival uses generation month for named historical activity and ignores legacy receipts" {
+  local august=sb_report_August_2026_2bbb0dbd32_2026-11-10_16_02_39.csv
+  local september=sb_report_September_2026_253c0de442_2026-11-10_16_02_39.csv
+  local legacy=sb_generate_monthly_report_old_2026-11-05_00_10_18.csv
+  add_file "$august"
+  add_file "$september"
+  mkdir -p -- "$receipts"
+  printf '2026-11\n' > "$receipts/$legacy"
+  printf 'legacy fixture\n' > "$monthly_dir/$legacy"
+
+  poll
+
+  assert_status 0
+  assert_call_count curl 3
+  assert_file_contains "$(mock_call_dir logger 2)/stdin" '2 newly downloaded report(s)'
+  assert_file_not_exists "$receipts/$august"
+  assert_file_not_exists "$receipts/$september"
+  # Unsupported filenames must not trigger the arrival check, even with a CSV.
+  assert_file_exists "$receipts/$legacy"
+  poll
+  assert_status 0
+  assert_call_count curl 5
 }
 
 @test "arrival does not ping for only historical or future files or an empty listing" {

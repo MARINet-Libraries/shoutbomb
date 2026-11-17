@@ -3,7 +3,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { parseReport, generatedDate, namedPeriod, validPeriod, previousMonth, branchIds, digest, canonical, serialize } = require('./lib/monthly-report.cjs');
+const { parseReport, generatedDate, namedPeriod, validPeriod, branchIds, digest, canonical, serialize } = require('./lib/monthly-report.cjs');
 const HELP = `Usage: ./visualize-monthly-reports [options] FILE.csv [FILE.csv ...]
 
 Create a self-contained, offline HTML dashboard from monthly Shoutbomb reports.
@@ -11,13 +11,12 @@ Branch selection is bookmarkable: report.html#branch=novato-library
 
 Options:
   --output FILE       HTML destination (default: project data/monthly-visualizations/index.html)
-  --period YYYY-MM    Explicit reporting month; requires exactly one input file
-  --previous-month   Explicitly interpret legacy filename dates as the next month
-  --named-periods    Use Month_YYYY labels in sb_report_Month_YYYY_... filenames
+  --period YYYY-MM    Override reporting month; requires exactly one input file
   -h, --help         Show help
 
-Without a period option, activity months remain unconfirmed. No .env, network,
-external libraries, downloader receipts, or remote services are used.
+Activity months default to Month_YYYY labels in sb_report_Month_YYYY_...csv
+filenames, not generation timestamps. Renamed inputs require --period YYYY-MM.
+No .env, network, external libraries, downloader receipts, or remote services are used.
 Existing output is replaced atomically; input files are never overwritten.
 Exit status: 0 success, 1 input/output/format error, 2 usage error.
 Requires Node.js 18 or newer. All relative arguments use the current directory.
@@ -39,17 +38,12 @@ function options(args) {
       const key = arg.slice(2);
       if (key === 'period' && result.period) usageError('--period may only be supplied once');
       result[key] = value;
-    } else if (arg === '--previous-month') result.previous = true;
-    else if (arg === '--named-periods') result.named = true;
-    else if (arg.startsWith('-')) usageError(`unknown option: ${arg}`);
+    } else if (arg.startsWith('-')) usageError(`unknown option: ${arg}`);
     else result.files.push(arg);
   }
   if (!result.files.length) usageError('provide at least one input file');
   if (result.period && (!validPeriod(result.period) || result.files.length !== 1)) {
     usageError('--period needs YYYY-MM and exactly one file');
-  }
-  if ([Boolean(result.period), Boolean(result.previous), Boolean(result.named)].filter(Boolean).length > 1) {
-    usageError('choose only one of --period, --previous-month, or --named-periods');
   }
   return result;
 }
@@ -73,12 +67,12 @@ function main(args) {
     try {
       parsed = parseReport(fs.readFileSync(file, 'utf8'));
       date = generatedDate(file);
-      if (opts.previous && (!date || namedPeriod(file))) throw new Error('--previous-month requires legacy dated Shoutbomb filenames; use --named-periods for named reports');
-      if (opts.named && !namedPeriod(file)) throw new Error('--named-periods requires sb_report_Month_YYYY_... filenames');
-      period = opts.period || (opts.named ? namedPeriod(file) : opts.previous ? previousMonth(date) : null);
+      const labeledPeriod = namedPeriod(file);
+      period = opts.period || labeledPeriod;
+      if (!period) throw new Error('expected sb_report_Month_YYYY_...csv; use --period YYYY-MM for one renamed input');
     } catch (error) { throw new Error(`${path.basename(file)}: ${error.message}`); }
     const semantic = serialize(canonical({ branches: parsed.branches, totals: parsed.totals, registrations: parsed.registrations, keywords: parsed.keywords, percentages: parsed.percentages, unattributed: parsed.unattributed }));
-    const key = period || date || 'undated';
+    const key = period;
     const identity = digest(semantic);
     if (seen.has(key)) {
       if (seen.get(key) !== identity) throw new Error(`conflicting reports for ${key}; select one corrected/source report explicitly`);
@@ -86,9 +80,9 @@ function main(args) {
     }
     seen.set(key, identity);
     for (const warning of parsed.warnings) process.stderr.write(`${path.basename(file)}: ${warning}\n`);
-    reports.push({ ...parsed, source: path.basename(file), date, period, periodMethod: opts.named ? 'named' : opts.period ? 'explicit' : opts.previous ? 'previous-month' : 'unconfirmed', id: digest(`${key}:${identity}`) });
+    reports.push({ ...parsed, source: path.basename(file), date, period, periodMethod: opts.period ? 'explicit' : 'named', id: digest(`${key}:${identity}`) });
   }
-  reports.sort((a, b) => (a.period || a.date || a.source).localeCompare(b.period || b.date || b.source));
+  reports.sort((a, b) => a.period.localeCompare(b.period));
   const branches = branchIds([...new Set(reports.flatMap(report => report.branches.map(b => b.name)))].sort());
   const template = fs.readFileSync(path.join(__dirname, 'lib/monthly-dashboard.html'), 'utf8');
   const script = fs.readFileSync(path.join(__dirname, 'lib/monthly-dashboard.js'), 'utf8');
