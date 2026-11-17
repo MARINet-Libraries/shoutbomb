@@ -8,9 +8,13 @@ Usage: ./download-monthly-reports [--help] [-H HOST] [-P PORT] [-v] [--receipt-d
 
 Downloads missing Shoutbomb statistics CSVs from /monthly_report into
 ./data/monthly-reports/, preserving their original filenames. All matching files
-are downloaded on the first run, including historical files. Existing regular
-files are skipped: published filenames are assumed immutable. Remote files are
-never modified. Partial downloads are not published; failed files retry next run.
+are downloaded on the first run, including historical files. After a completed
+local CSV exists, moves its remote file to /monthly_report/processed/ (created
+if missing). Existing regular local files skip downloading but still retry the
+remote move, including files downloaded before this behavior was introduced.
+Published filenames are assumed immutable. Partial downloads are not published.
+Move failures preserve local CSVs and retry next run; destination conflicts fail
+without intentionally overwriting. Do not run other remote movers concurrently.
 
 Loads SSH/SFTP settings from the project-root .env. Strict host key checking is
 always enabled. The remote directory must already exist.
@@ -37,7 +41,7 @@ Options:
                         failures prevent publication and return failure.
 
 Exit status: 0 on success (including no new files), 1 on configuration, lock,
-listing, or download failure, 2 on usage error, 127 when sftp is unavailable.
+listing, download, or remote move failure, 2 on usage error, 127 when sftp is unavailable.
 Overlapping invocations fail without downloading. After an unclean termination,
 remove data/monthly-reports/.download.lock only after verifying no run is active.
 EOF
@@ -199,7 +203,42 @@ if ! printf '@ls -1 /monthly_report\n' |
   exit 1
 fi
 
+move_to_processed() {
+  local name="$1"
+  local entry processed_name
+  local processed_dir="/monthly_report/processed"
+  # A trailing slash requires a directory. If absent, create it and require a
+  # successful listing before any rename. Never mistake a listing failure for
+  # an empty destination. Recheck for conflicts before each move; SFTP rename
+  # may overwrite on some servers, so remote writers must not race this script.
+  if ! printf '@ls -1 %s\n' "$(sftp_quote "$processed_dir/")" |
+    sftp "${sftp_args[@]}" "${SSH_USERNAME}@${host}" \
+      > "$lock_dir/processed-listing" 2> "$lock_dir/processed-error"; then
+    if ! printf '@mkdir %s\n@ls -1 %s\n' \
+      "$(sftp_quote "$processed_dir")" "$(sftp_quote "$processed_dir/")" |
+      sftp "${sftp_args[@]}" "${SSH_USERNAME}@${host}" > "$lock_dir/processed-listing"; then
+      echo "Error: Cannot create or list $processed_dir; remote file retained: $name" >&2
+      return 1
+    fi
+  fi
+  while IFS= read -r entry || [[ -n "$entry" ]]; do
+    processed_name="${entry#"$processed_dir/"}"
+    if [[ "$processed_name" == "$name" ]]; then
+      echo "Error: Remote processed destination already exists; not overwriting: $name" >&2
+      return 1
+    fi
+  done < "$lock_dir/processed-listing"
+  if ! printf '@rename %s %s\n' \
+    "$(sftp_quote "/monthly_report/$name")" "$(sftp_quote "$processed_dir/$name")" |
+    sftp "${sftp_args[@]}" "${SSH_USERNAME}@${host}"; then
+    echo "Error: Failed to move remote file to processed; local CSV retained, retry next run: $name" >&2
+    return 1
+  fi
+  echo "Remote move complete: $name"
+}
+
 downloaded=0
+moved=0
 skipped=0
 ignored=0
 failed=0
@@ -219,6 +258,11 @@ while IFS= read -r entry || [[ -n "$entry" ]]; do
   fi
   if [[ -f "$local_file" ]]; then
     skipped=$((skipped + 1))
+    if move_to_processed "$name"; then
+      moved=$((moved + 1))
+    else
+      failed=$((failed + 1))
+    fi
     continue
   fi
 
@@ -232,6 +276,11 @@ while IFS= read -r entry || [[ -n "$entry" ]]; do
     mv -- "$lock_dir/download.part" "$local_file"; then
     downloaded=$((downloaded + 1))
     echo "Download complete: $name"
+    if move_to_processed "$name"; then
+      moved=$((moved + 1))
+    else
+      failed=$((failed + 1))
+    fi
   else
     echo "Error: Failed to download $name" >&2
     rm -f -- "$lock_dir/download.part"
@@ -239,6 +288,6 @@ while IFS= read -r entry || [[ -n "$entry" ]]; do
   fi
 done < "$lock_dir/listing"
 
-printf 'Monthly reports: downloaded=%s skipped=%s ignored=%s failed=%s\n' \
-  "$downloaded" "$skipped" "$ignored" "$failed"
+printf 'Monthly reports: downloaded=%s skipped=%s ignored=%s failed=%s moved=%s\n' \
+  "$downloaded" "$skipped" "$ignored" "$failed" "$moved"
 [[ $failed -eq 0 ]]

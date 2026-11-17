@@ -30,7 +30,7 @@ SHOUTBOMB_LOGGER_PATH='$MOCK_BIN/logger'
 EOF
 }
 
-@test "monthly download fetches all historical files from outside project and skips them on rerun" {
+@test "monthly download fetches historical files, moves them remotely, and has nothing to do on rerun" {
   add_remote_file "$first" 'current fixture'
   add_remote_file "$older" 'historical fixture'
 
@@ -42,7 +42,12 @@ EOF
   assert_file_content "$monthly_dir/$first" 'current fixture'
   assert_file_content "$monthly_dir/$older" 'historical fixture'
   assert_directory_not_exists "$monthly_dir/.download.lock"
-  assert_call_count sftp 3
+  assert_output_contains 'moved=2'
+  assert_file_not_exists "$MOCK_STATE_DIR/monthly-remote/$first"
+  assert_file_not_exists "$MOCK_STATE_DIR/monthly-remote/$older"
+  assert_file_content "$MOCK_STATE_DIR/monthly-remote/processed/$first" 'current fixture'
+  assert_file_content "$MOCK_STATE_DIR/monthly-remote/processed/$older" 'historical fixture'
+  assert_call_count sftp 7
   assert_mock_arg sftp 1 'BatchMode=yes'
   assert_mock_arg sftp 1 'StrictHostKeyChecking=yes'
   assert_mock_arg sftp 1 'IdentitiesOnly=yes'
@@ -56,8 +61,8 @@ EOF
 
   run "$TEST_PROJECT/download-monthly-reports"
   assert_status 0
-  assert_output_contains 'downloaded=0 skipped=2 ignored=0 failed=0'
-  assert_call_count sftp 4
+  assert_output_contains 'downloaded=0 skipped=0 ignored=0 failed=0 moved=0'
+  assert_call_count sftp 8
 }
 
 @test "monthly download accepts basename listing and ignores unsafe or unrelated entries" {
@@ -71,7 +76,7 @@ EOF
 
   assert_status 0
   assert_output_contains 'downloaded=1 skipped=0 ignored=4 failed=0'
-  assert_call_count sftp 2
+  assert_call_count sftp 4
   assert_file_exists "$monthly_dir/$first"
   assert_file_not_exists "$TEST_PROJECT/hacked"
   assert_file_not_exists "$TEST_PROJECT/data/escape.csv"
@@ -112,14 +117,16 @@ EOF
   assert_file_not_exists "$monthly_dir/$first"
   assert_file_exists "$monthly_dir/$older"
   assert_directory_not_exists "$monthly_dir/.download.lock"
-  assert_call_count sftp 3
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/$first"
+  assert_file_not_exists "$MOCK_STATE_DIR/monthly-remote/processed/$first"
+  assert_call_count sftp 5
 
   unset MOCK_SFTP_FAIL_MATCH
   run "$TEST_PROJECT/download-monthly-reports"
   assert_status 0
-  assert_output_contains 'downloaded=1 skipped=1 ignored=0 failed=0'
+  assert_output_contains 'downloaded=1 skipped=0 ignored=0 failed=0 moved=1'
   assert_file_exists "$monthly_dir/$first"
-  assert_call_count sftp 5
+  assert_call_count sftp 9
 }
 
 @test "monthly download cleans interrupted transfers and preserves signal exit status" {
@@ -171,7 +178,144 @@ EOF
   assert_status 0
   assert_output_contains 'downloaded=0 skipped=1'
   assert_file_content "$monthly_dir/$first" 'original local copy'
-  assert_call_count sftp 1
+  assert_file_content "$MOCK_STATE_DIR/monthly-remote/processed/$first" 'remote replacement'
+  assert_output_contains 'moved=1'
+  assert_call_count sftp 3
+  refute_file_contains "$MOCK_STATE_DIR/sftp/transcript" '@get'
+}
+
+@test "monthly download creates the remote processed directory when absent" {
+  rmdir -- "$MOCK_STATE_DIR/monthly-remote/processed"
+  add_remote_file "$first"
+
+  run "$TEST_PROJECT/download-monthly-reports"
+
+  assert_status 0
+  assert_output_contains 'downloaded=1 skipped=0 ignored=0 failed=0 moved=1'
+  assert_file_exists "$monthly_dir/$first"
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/processed/$first"
+  assert_file_not_exists "$MOCK_STATE_DIR/monthly-remote/$first"
+  assert_file_contains "$MOCK_STATE_DIR/sftp/transcript" '@mkdir "/monthly_report/processed"'
+}
+
+@test "monthly move failure preserves the CSV and retries without downloading or replacing receipts" {
+  add_remote_file "$first" 'downloaded fixture'
+  add_remote_file "$older"
+  local receipts="$monthly_dir/.arrival-state/pending"
+  export MOCK_DATE_MONTH=2026-11
+  export MOCK_SFTP_FAIL_MATCH="@rename \"/monthly_report/$first\""
+
+  run "$TEST_PROJECT/download-monthly-reports" --receipt-dir "$receipts"
+
+  assert_status 1
+  assert_output_contains 'downloaded=2 skipped=0 ignored=0 failed=1 moved=1'
+  assert_output_contains 'local CSV retained, retry next run'
+  assert_file_content "$monthly_dir/$first" 'downloaded fixture'
+  assert_file_content "$receipts/$first" 2026-11
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/$first"
+  assert_file_not_exists "$MOCK_STATE_DIR/monthly-remote/processed/$first"
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/processed/$older"
+  assert_directory_not_exists "$monthly_dir/.download.lock"
+  unset MOCK_SFTP_FAIL_MATCH
+  export MOCK_DATE_MONTH=2026-12
+
+  run "$TEST_PROJECT/download-monthly-reports" --receipt-dir "$receipts"
+
+  assert_status 0
+  assert_output_contains 'downloaded=0 skipped=1 ignored=0 failed=0 moved=1'
+  assert_file_content "$monthly_dir/$first" 'downloaded fixture'
+  assert_file_content "$receipts/$first" 2026-11
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/processed/$first"
+  assert_file_not_exists "$MOCK_STATE_DIR/monthly-remote/$first"
+  # Only the original two downloads occurred, never a retry of the get.
+  [[ "$(grep -c '^@get ' "$MOCK_STATE_DIR/sftp/transcript")" -eq 2 ]]
+}
+
+@test "monthly move refuses an existing processed filename without overwriting" {
+  add_remote_file "$first" 'new remote copy'
+  printf 'previous processed copy\n' > "$MOCK_STATE_DIR/monthly-remote/processed/$first"
+
+  run "$TEST_PROJECT/download-monthly-reports"
+
+  assert_status 1
+  assert_output_contains 'downloaded=1 skipped=0 ignored=0 failed=1 moved=0'
+  assert_output_contains 'Remote processed destination already exists'
+  assert_file_content "$monthly_dir/$first" 'new remote copy'
+  assert_file_content "$MOCK_STATE_DIR/monthly-remote/$first" 'new remote copy'
+  assert_file_content "$MOCK_STATE_DIR/monthly-remote/processed/$first" 'previous processed copy'
+  refute_file_contains "$MOCK_STATE_DIR/sftp/transcript" '@rename'
+
+  run "$TEST_PROJECT/download-monthly-reports"
+  assert_status 1
+  assert_output_contains 'downloaded=0 skipped=1 ignored=0 failed=1 moved=0'
+  assert_file_content "$MOCK_STATE_DIR/monthly-remote/processed/$first" 'previous processed copy'
+}
+
+@test "monthly move never treats a failed processed listing as an empty destination" {
+  add_remote_file "$first"
+  export MOCK_SFTP_FAIL_MATCH='@ls -1 "/monthly_report/processed/"'
+
+  run "$TEST_PROJECT/download-monthly-reports"
+
+  assert_status 1
+  assert_output_contains 'Cannot create or list /monthly_report/processed'
+  assert_output_contains 'downloaded=1 skipped=0 ignored=0 failed=1 moved=0'
+  assert_file_exists "$monthly_dir/$first"
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/$first"
+  refute_file_contains "$MOCK_STATE_DIR/sftp/transcript" '@rename'
+}
+
+@test "monthly move fails safely when processed is not a directory" {
+  rmdir -- "$MOCK_STATE_DIR/monthly-remote/processed"
+  printf 'not a directory\n' > "$MOCK_STATE_DIR/monthly-remote/processed"
+  add_remote_file "$first"
+
+  run "$TEST_PROJECT/download-monthly-reports"
+
+  assert_status 1
+  assert_file_exists "$monthly_dir/$first"
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/$first"
+  assert_file_content "$MOCK_STATE_DIR/monthly-remote/processed" 'not a directory'
+  refute_file_contains "$MOCK_STATE_DIR/sftp/transcript" '@rename'
+}
+
+@test "monthly move retries after interruption between local publication and remote rename" {
+  add_remote_file "$first"
+  export MOCK_SFTP_INTERRUPT_MOVE=1
+
+  run "$TEST_PROJECT/download-monthly-reports"
+
+  assert_status 143
+  assert_file_exists "$monthly_dir/$first"
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/$first"
+  assert_directory_not_exists "$monthly_dir/.download.lock"
+  unset MOCK_SFTP_INTERRUPT_MOVE
+
+  run "$TEST_PROJECT/download-monthly-reports"
+
+  assert_status 0
+  assert_output_contains 'downloaded=0 skipped=1 ignored=0 failed=0 moved=1'
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/processed/$first"
+  [[ "$(grep -c '^@get ' "$MOCK_STATE_DIR/sftp/transcript")" -eq 1 ]]
+}
+
+@test "monthly move completed before interruption is a successful no-op on the next run" {
+  add_remote_file "$first"
+  export MOCK_SFTP_INTERRUPT_AFTER_MOVE=1
+
+  run "$TEST_PROJECT/download-monthly-reports"
+
+  assert_status 143
+  assert_file_exists "$monthly_dir/$first"
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/processed/$first"
+  assert_directory_not_exists "$monthly_dir/.download.lock"
+  unset MOCK_SFTP_INTERRUPT_AFTER_MOVE
+
+  run "$TEST_PROJECT/download-monthly-reports"
+
+  assert_status 0
+  assert_output_contains 'downloaded=0 skipped=0 ignored=0 failed=0 moved=0'
+  [[ "$(grep -c '^@get ' "$MOCK_STATE_DIR/sftp/transcript")" -eq 1 ]]
 }
 
 @test "monthly download rejects symlink and directory destinations without writing through them" {

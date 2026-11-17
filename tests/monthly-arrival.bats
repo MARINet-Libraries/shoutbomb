@@ -52,7 +52,7 @@ poll() {
   poll
   assert_status 0
   assert_call_count curl 5
-  assert_call_count sftp 5
+  assert_call_count sftp 11
 }
 
 @test "arrival does not ping for only historical or future files or an empty listing" {
@@ -75,14 +75,14 @@ poll() {
 
   assert_status 0
   assert_file_content "$receipts/$current" 2026-11
-  assert_call_count sftp 2
+  assert_call_count sftp 4
   assert_file_contains "$(mock_call_dir logger 2)/stdin" 'pending receipts will retry'
   unset MOCK_CURL_FAIL_MATCH
 
   poll
 
   assert_status 0
-  assert_call_count sftp 3
+  assert_call_count sftp 5
   assert_call_count curl 6
   assert_file_not_exists "$receipts/$current"
 
@@ -123,6 +123,29 @@ poll() {
   assert_file_not_exists "$monthly_dir/$older"
   assert_file_content "$MOCK_STATE_DIR/curl/urls" \
     $'https://hc.example.test/daily/start\nhttps://hc.example.test/arrival\nhttps://hc.example.test/daily/fail'
+}
+
+@test "arrival counts a completed download even when its remote move fails and does not repeat on move retry" {
+  add_file "$current"
+  export MOCK_SFTP_FAIL_MATCH='@rename'
+
+  poll
+
+  assert_status 1
+  assert_file_exists "$monthly_dir/$current"
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/$current"
+  assert_file_not_exists "$receipts/$current"
+  assert_file_content "$MOCK_STATE_DIR/curl/urls" \
+    $'https://hc.example.test/daily/start\nhttps://hc.example.test/arrival\nhttps://hc.example.test/daily/fail'
+  unset MOCK_SFTP_FAIL_MATCH
+
+  poll
+
+  assert_status 0
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/processed/$current"
+  assert_file_not_exists "$MOCK_STATE_DIR/monthly-remote/$current"
+  assert_call_count curl 5
+  [[ "$(grep -c '^https://hc.example.test/arrival$' "$MOCK_STATE_DIR/curl/urls")" -eq 1 ]]
 }
 
 @test "arrival never pings for an incomplete current-month download" {
@@ -233,6 +256,8 @@ poll() {
 
   assert_status 1
   assert_file_not_exists "$monthly_dir/$current"
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/$current"
+  assert_file_not_exists "$MOCK_STATE_DIR/monthly-remote/processed/$current"
   refute_file_contains "$MOCK_STATE_DIR/curl/urls" '/arrival'
   rmdir -- "$receipts/$current"
   poll
@@ -266,6 +291,8 @@ poll() {
   assert_status 0
   assert_call_count curl 2
   rm -- "$monthly_dir/$current"
+  # Supply a fresh remote arrival: moved files are no longer polled.
+  mv -- "$MOCK_STATE_DIR/monthly-remote/processed/$current" "$MOCK_STATE_DIR/monthly-remote/$current"
   export MOCK_LOGGER_STATUS=24
   poll
   assert_status 24

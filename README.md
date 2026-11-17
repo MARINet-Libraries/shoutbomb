@@ -276,13 +276,17 @@ Run manually, or use the daily monitored wrapper:
 
 The downloader lists SFTP `/monthly_report` using the existing SSH credentials and strict host-key checking. It accepts basenames of the form `sb_generate_monthly_report_<identifier>_YYYY-MM-DD_HH_MM_SS.csv`; the identifier may contain ASCII letters, digits, underscores, and hyphens. Other entries are ignored. The filename timestamp is not interpreted as the reporting period.
 
-Files are saved under their original names in `data/monthly-reports/`. All missing matching files are downloaded, including historical files on the first run. Existing regular files are skipped by filename, even if their remote contents change; published filenames are assumed immutable until Shoutbomb confirms its correction policy. Remote files are never modified. No CSV schema or reporting-period validation is performed.
+Files are saved under their original names in `data/monthly-reports/`. All missing matching files are downloaded, including historical files on the first run. Existing regular, non-symlink local files skip downloading by filename, even if their remote contents change; published filenames are assumed immutable until Shoutbomb confirms its correction policy. No CSV schema or reporting-period validation is performed.
 
-Each transfer is staged under `data/monthly-reports/.download.lock/` and atomically renamed after SFTP reports success. Failed transfers are removed and retried next run; other files continue downloading. Completed files are created with owner-only permissions. Existing upload and archive scripts do not scan this subdirectory; downloads are retained without automatic deletion and must remain here for filename-based deduplication. Future processing is separate from downloading.
+Once a complete local CSV exists, the downloader moves its remote source into `/monthly_report/processed/`, preserving the basename and creating that remote directory if needed. This also applies to files downloaded before this behavior was introduced. A failed move leaves the local CSV intact and returns failure; the next run retries the move without downloading again or creating another arrival receipt. The remote source listing is the retry queue, so no separate move-state directory is needed. Files already in remote `processed/` are not downloaded.
 
-A successful listing with no new files returns zero. Configuration, listing, transfer, publication, or lock failures return 1; usage errors return 2; missing `sftp` returns 127. The summary reports downloaded/skipped/ignored/failed entry counts. `--host`, `--port`, and `--verbose` (or `-H`, `-P`, `-v`) work on both entrypoints; the root script validates downloader arguments. The service preserves the logger pipeline's status, as existing services do.
+Before each move, a successful destination listing is required and an existing matching basename is reported as a conflict, not overwritten. Resolve conflicts manually; no content comparison is performed. Do not run other remote movers/writers concurrently: SFTP's destination check and rename are not atomic together, and some servers allow rename to overwrite a destination created between those steps. The SSH account now needs permission to list/create `/monthly_report/processed/` and rename files into it.
 
-Overlapping runs fail rather than silently skipping. Normal exits and HUP/INT/TERM clean up staging and the lock. After a machine crash or forced kill, verify no downloader is active before manually removing `data/monthly-reports/.download.lock/`; the next run retries incomplete files.
+Each transfer is staged under `data/monthly-reports/.download.lock/` and atomically renamed after SFTP reports success. Failed transfers are removed and retried next run; other files continue downloading. Completed files are created with owner-only permissions. Existing upload and archive scripts do not scan this subdirectory; downloads are retained without automatic deletion and must remain here for filename-based deduplication and move retries. Moving the remote source does not move or delete the local CSV; local data processing remains separate.
+
+A successful poll with no new files or pending move failures returns zero. Configuration, listing, transfer, publication, remote-directory/move/conflict, or lock failures return 1; usage errors return 2; missing `sftp` returns 127. The summary reports downloaded/skipped/ignored/failed counts and adds `moved` for completed remote moves. `skipped` counts skipped downloads whose remote moves are still attempted; a successfully downloaded file can also count as failed if its remote move fails. `--host`, `--port`, and `--verbose` (or `-H`, `-P`, `-v`) work on both entrypoints; the root script validates downloader arguments. The service preserves the logger pipeline's status, as existing services do.
+
+Overlapping runs fail rather than silently skipping. Normal exits and HUP/INT/TERM clean up staging and the lock. After a machine crash or forced kill, verify no downloader is active before manually removing `data/monthly-reports/.download.lock/`; the next run retries incomplete downloads and remote moves for completed local files still listed at the remote source.
 
 The service logs under `shoutbomb-download-monthly-reports` and uses the shared best-effort start/success/failure lifecycle. Configure `HEALTHCHECKS_MONTHLY_DOWNLOAD_URL` for **daily polling**: success means the poll completed, not that a new monthly file arrived.
 
@@ -290,7 +294,7 @@ The service logs under `shoutbomb-download-monthly-reports` and uses the shared 
 
 Enable `--arrival-healthcheck-url-env HEALTHCHECKS_MONTHLY_ARRIVAL_URL` to notify a second check when a **newly downloaded** file's filename date is in the current calendar month. This is an arrival proxy, not a claim about the CSV's reporting period. The calendar month uses the system timezone (or `TZ` in `.env`). Historical/future-month backfills and existing local files do not count. Several eligible downloads in one run produce one arrival success ping; additional new eligible files can produce another. The two resolved check URLs must differ.
 
-Only arrival **success** pings go to this second check, never daily `/start` or `/fail` pings. Daily no-op successes do not refresh it. Completed eligible downloads still count if another transfer or the logging pipeline fails; the daily check continues to reflect that failure independently. Omit the arrival option to retain daily-only operation.
+Only arrival **success** pings go to this second check, never daily `/start` or `/fail` pings. Daily no-op successes do not refresh it. Completed eligible downloads still count if a remote move, another transfer, or the logging pipeline fails; the daily check continues to reflect that failure independently. Omit the arrival option to retain daily-only operation.
 
 Configure the second check with a **calendar-month schedule and grace period**, not a fixed 30-day interval. For example, expecting a ping from the 1st with a nine-day grace period gives a deadline around the 10th; choose the exact deadline and timezone in Healthchecks.io and verify its displayed next deadline. Reports typically arrive during the first week. The scripts impose no overdue deadline and never send an overdue failure themselves; monitoring flags a missing arrival. Check that early-in-window arrivals satisfy the intended monthly cycle.
 
@@ -300,7 +304,7 @@ Failed arrival pings (including missing `curl`) leave receipts for the next dail
 
 Concurrent notification attempts use `data/monthly-reports/.arrival.lock/`; contention defers notification without failing the daily job. After an unclean termination, verify no service is active before removing a stale arrival lock. As with the download lock, do not remove active locks.
 
-Before operational rollout, independently verify SFTP access to `/monthly_report`, the actual filename family, filename-reuse policy, a complete download, and both Healthchecks.io checks in the deployment environment. Verify monthly scheduling/grace/timezone, an eligible arrival, a no-op day, and recovery from a failed arrival ping using designated test checks, not production checks during routine validation. Local mocked checks do not prove these live integrations.
+Before operational rollout, independently verify SFTP access to `/monthly_report`, permission to create/list `/monthly_report/processed/` and rename into it, the actual filename family, filename-reuse policy, a complete download and remote move/retry, and both Healthchecks.io checks in the deployment environment. Verify monthly scheduling/grace/timezone, an eligible arrival, a no-op day, and recovery from a failed arrival ping using designated test checks, not production checks during routine validation. Local mocked checks do not prove these live integrations.
 
 ### Visualize monthly statistics
 
@@ -583,7 +587,7 @@ If something is not working, check these first:
 - `/usr/bin/logger` exists for monitored service logging
 - the latest expected CSV actually exists in `data/`
 - remote upload directories already exist
-- SFTP `/monthly_report` exists and is readable for monthly downloads
+- SFTP `/monthly_report` exists and is readable for monthly downloads; the account can create/list its `processed/` directory and rename downloaded sources into it
 - no stale `data/monthly-reports/.download.lock/` or `.arrival.lock/` remains after an unclean exit (verify no run/service is active before removing it)
 - monthly arrivals select a separate URL, use the intended system/`TZ` month, and have a matching calendar-month schedule/grace in monitoring
 - the host key is trusted, since strict host key checking is always enabled

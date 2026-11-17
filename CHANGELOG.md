@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-17
+
+- After local CSV completion, `download-monthly-reports` now moves remote sources into `/monthly_report/processed/`, creating it if needed; existing local files, including older downloads, retry outstanding moves without redownloading or generating arrival receipts. Move/directory/conflict failures preserve local files, continue other reports, and return failure; the summary adds `moved`, while arrival monitoring still counts completed downloads independently of move success.
+- Added mocked coverage for directory creation, conflicts, failed moves/listings, interruption recovery, and daily-failure/monthly-arrival independence. Documented remote permissions, retry semantics, and the requirement to avoid concurrent remote writers because SFTP destination checks and renames are not atomic together.
+
 ## 2026-11-13
 
 - Tightened the monthly dashboard header, added mobile-specific chart geometry/readable labels, and replaced wide branch comparisons with three-column metric rows grouped alphabetically by branch. Grouped supporting sections with selection-preserving jump controls and made headline changes conversational; exact table values, source data, parser/CLI, and operational behavior are unchanged.
