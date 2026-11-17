@@ -166,7 +166,7 @@ poll() {
   poll
 
   assert_status 0
-  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/processed/$current"
+  assert_file_exists "$MOCK_STATE_DIR/monthly-remote/Processed/$current"
   assert_file_not_exists "$MOCK_STATE_DIR/monthly-remote/$current"
   assert_call_count curl 5
   [[ "$(grep -c '^https://hc.example.test/arrival$' "$MOCK_STATE_DIR/curl/urls")" -eq 1 ]]
@@ -281,7 +281,7 @@ poll() {
   assert_status 1
   assert_file_not_exists "$monthly_dir/$current"
   assert_file_exists "$MOCK_STATE_DIR/monthly-remote/$current"
-  assert_file_not_exists "$MOCK_STATE_DIR/monthly-remote/processed/$current"
+  assert_file_not_exists "$MOCK_STATE_DIR/monthly-remote/Processed/$current"
   refute_file_contains "$MOCK_STATE_DIR/curl/urls" '/arrival'
   rmdir -- "$receipts/$current"
   poll
@@ -316,7 +316,7 @@ poll() {
   assert_call_count curl 2
   rm -- "$monthly_dir/$current"
   # Supply a fresh remote arrival: moved files are no longer polled.
-  mv -- "$MOCK_STATE_DIR/monthly-remote/processed/$current" "$MOCK_STATE_DIR/monthly-remote/$current"
+  mv -- "$MOCK_STATE_DIR/monthly-remote/Processed/$current" "$MOCK_STATE_DIR/monthly-remote/$current"
   export MOCK_LOGGER_STATUS=24
   poll
   assert_status 24

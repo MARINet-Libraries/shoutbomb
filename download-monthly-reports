@@ -9,7 +9,7 @@ Usage: ./download-monthly-reports [--help] [-H HOST] [-P PORT] [-v] [--receipt-d
 Downloads missing Shoutbomb statistics CSVs from /monthly_report into
 ./data/monthly-reports/, preserving their original filenames. All matching files
 are downloaded on the first run, including historical files. After a completed
-local CSV exists, moves its remote file to /monthly_report/processed/ (created
+local CSV exists, moves its remote file to /monthly_report/Processed/ (created
 if missing). Existing regular local files skip downloading but still retry the
 remote move, including files downloaded before this behavior was introduced.
 Matches sb_report_Month_YYYY_<identifier>_YYYY-MM-DD_HH_MM_SS.csv, using full
@@ -209,7 +209,7 @@ fi
 move_to_processed() {
   local name="$1"
   local entry processed_name
-  local processed_dir="/monthly_report/processed"
+  local processed_dir="/monthly_report/Processed"
   # A trailing slash requires a directory. If absent, create it and require a
   # successful listing before any rename. Never mistake a listing failure for
   # an empty destination. Recheck for conflicts before each move; SFTP rename

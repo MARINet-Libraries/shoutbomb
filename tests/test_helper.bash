@@ -18,7 +18,7 @@ setup_project_fixture() {
     "$TEST_PROJECT/services/lib" \
     "$TEST_OUTSIDE_DIR" \
     "$MOCK_BIN" \
-    "$MOCK_STATE_DIR/monthly-remote/processed"
+    "$MOCK_STATE_DIR/monthly-remote/Processed"
 
   cp -- "$TEST_SOURCE_ROOT/check" "$TEST_PROJECT/check"
   cp -- "$TEST_SOURCE_ROOT/generate-reports" "$TEST_PROJECT/generate-reports"

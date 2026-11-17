@@ -2,9 +2,11 @@
 
 ## 2026-11-17
 
+- Corrected the monthly downloader's remote destination to `/monthly_report/Processed/` (capital `P`) for listing, creation, conflict checks, and moves; updated help, documentation, and mocked tests.
+
 - Made `sb_report_Month_YYYY_<identifier>_YYYY-MM-DD_HH_MM_SS.csv` the canonical download/arrival filename family and removed legacy matching. Arrival monitoring still compares the trailing generation month with the download/current month, not the activity label; remote processing/move retries and monitoring lifecycle are unchanged.
 - The visualizer now assigns activity months automatically from filename labels, separating same-generation-date reports without flags. Removed `--named-periods`, `--previous-month`, and legacy date inference; renamed inputs require single-file `--period`, and invalid/missing labels fail without replacing output. Updated help, documentation, and synthetic/mocked coverage.
-- After local CSV completion, `download-monthly-reports` now moves remote sources into `/monthly_report/processed/`, creating it if needed; existing local files, including older downloads, retry outstanding moves without redownloading or generating arrival receipts. Move/directory/conflict failures preserve local files, continue other reports, and return failure; the summary adds `moved`, while arrival monitoring still counts completed downloads independently of move success.
+- After local CSV completion, `download-monthly-reports` now moves remote sources into `/monthly_report/Processed/`, creating it if needed; existing local files, including older downloads, retry outstanding moves without redownloading or generating arrival receipts. Move/directory/conflict failures preserve local files, continue other reports, and return failure; the summary adds `moved`, while arrival monitoring still counts completed downloads independently of move success.
 - Added mocked coverage for directory creation, conflicts, failed moves/listings, interruption recovery, and daily-failure/monthly-arrival independence. Documented remote permissions, retry semantics, and the requirement to avoid concurrent remote writers because SFTP destination checks and renames are not atomic together.
 
 ## 2026-11-13
