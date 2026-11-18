@@ -735,7 +735,7 @@ test('explicit library mapping retains source IDs, missing members, exact aliase
   assert.ok(groups.systems[0].members.includes('Novato Library'));
   assert.ok(groups.systems[1].members.includes('San Rafael Pickleweed Library'));
   assert.ok(!groups.systems.some(s => s.members.includes('Not Novato Library')));
-  assert.equal(groups.branches.find(b => b.name === 'Mall').id, 'mall');
+  assert.equal(groups.branches.find(b => b.name === 'Northgate Library').id, 'northgate-library');
   assert.equal(groups.systems[0].members.length, 11);
   assert.equal(groups.systems[1].members.length, 3);
   assert.throws(() => parser.libraryGroups(parser.branchIds(['Novato', 'Novato Library']), libraryMapping), /multiple source labels/);
@@ -748,6 +748,26 @@ test('explicit library mapping retains source IDs, missing members, exact aliase
   assert.notEqual(collision.branches[1].id, 'a-b');
 });
 
+test('verified source spellings map explicitly and Northgate replaces Mall without inventing aliases', () => {
+  // Synthetic identities using source spellings verified against the example reports;
+  // Northgate's source spelling was supplied explicitly by the user.
+  const names = ['Civic Center Library', 'Corte Madera Library', 'Fairfax Library', 'Inverness Library',
+    'Marin City Library', 'Novato Library', 'South Novato Library', 'San Rafael Downtown Library',
+    'San Rafael Pickleweed Library', 'San Rafael Northgate Library'];
+  const groups = parser.libraryGroups(parser.branchIds(names), libraryMapping);
+  assert.deepEqual(groups.systems[0].members.filter(name => names.includes(name)).sort(), names.slice(0, 7).sort());
+  assert.deepEqual(groups.systems[1].members, names.slice(7));
+  const northgate = groups.branches.find(b => b.name === 'San Rafael Northgate Library');
+  assert.equal(northgate.label, 'Northgate Library');
+  assert.equal(northgate.id, 'san-rafael-northgate-library');
+  assert.ok(!libraryMapping.some(s => s.branches.some(b => b.sources.some(alias => /Mall/.test(alias)))));
+  assert.ok(!groups.branches.some(b => b.name === 'Mall'));
+  const data = groupedData(), h = domHarness(data, '#branch=san-rafael-northgate-library');
+  assert.equal(h.get('registered-summary').children[0].textContent, '10');
+  assert.equal(h.get('branch').children.find(o => o.value === northgate.id).textContent.trim(), 'Northgate Library');
+  assert.ok(!h.get('status').textContent.includes('No data'));
+});
+
 test('one selector offers selectable systems with indented members, then ungrouped branches', () => {
   const data = groupedData(), h = domHarness(data, '');
   const options = h.get('branch').children;
@@ -757,7 +777,7 @@ test('one selector offers selectable systems with indented members, then ungroup
   assert.deepEqual(options.slice(2, 13).map(o => o.textContent), libraryMapping[0].branches.map(b => `\u00a0\u00a0\u00a0\u00a0${b.name}`));
   assert.equal(options[13].textContent, 'San Rafael');
   assert.equal(options[13].value, 'system:san-rafael');
-  assert.deepEqual(options.slice(14, 17).map(o => o.textContent.trim()), ['San Rafael Downtown', 'Pickleweed', 'Mall']);
+  assert.deepEqual(options.slice(14, 17).map(o => o.textContent.trim()), ['San Rafael Downtown', 'Pickleweed', 'Northgate Library']);
   assert.equal(options[17].textContent, 'Unassigned Library');
   assert.ok(options.every(o => o.tagName === 'option')); // System options are selectable, not disabled optgroup labels.
 });
@@ -768,8 +788,8 @@ test('library views sum members once, separate items and notices, and retain all
   assert.deepEqual(['registered-summary', 'signups-summary', 'notice-summary'].map(id => h.get(id).children[0].textContent), ['110', '11', '33']);
   assert.equal(h.get('notice-total').textContent, '33');
   assert.match(h.get('notice-total-note').textContent, /each branch counted once/);
-  assert.deepEqual(tableRows(h, 'notices').map(row => row[1]), ['11', '11', '11']);
-  assert.deepEqual(tableRows(h, 'items').map(row => row[1]), ['44', '55', '22', '11']);
+  assert.deepEqual(tableRows(h, 'notices').map(row => row[1]), ['11', '11', '11'].map(value => `${value} · Member total · 11 of 11 branches reported`));
+  assert.deepEqual(tableRows(h, 'items').map(row => row[1]), ['44', '55', '22', '11'].map(value => `${value} · Member total · 11 of 11 branches reported`));
   assert.equal(h.get('keyword-summary').children[0].textContent, '7');
   assert.match(h.get('system-registrations').textContent, /snapshot\): 500/);
   assert.match(h.get('unattributed').textContent, /7 signup/);
@@ -814,32 +834,42 @@ test('system/report navigation preserves old branch links, extras, jumps, and Ba
   h.get('print').fire('click'); assert.equal(h.win.printed, true);
 });
 
-test('missing members and metrics leave system totals unknown, never partial or zero, and break chart lines', () => {
+test('missing members and metrics produce labeled subtotals, not zeros or complete totals', () => {
   const data = groupedData();
   delete data.reports[1].branches.find(b => b.name === 'Bolinas').metrics.signups;
   const h = domHarness(data, '#system=mcfl');
   assert.equal(h.get('registered-summary').children[0].textContent, '110');
-  assert.equal(h.get('signups-summary').children[0].textContent, 'Not reported');
+  assert.match(h.get('registered-summary').textContent, /Member total · 11 of 11 branches reported/);
+  assert.equal(h.get('signups-summary').children[0].textContent, '10');
+  assert.match(h.get('signups-summary').textContent, /Reported subtotal · 10 of 11 branches reported/);
   assert.match(h.get('signups-summary').textContent, /Not comparable/);
   const plot = h.get('signups-chart').children.find(n => n.tagName === 'svg');
-  assert.equal(plot.children.filter(n => n.tagName === 'circle').length, 1);
+  assert.equal(plot.children.filter(n => n.tagName === 'circle').length, 2);
   assert.equal(plot.children.filter(n => n.tagName === 'polyline').length, 0);
-  data.reports[1].branches = data.reports[1].branches.filter(b => b.name !== 'Mall');
+  assert.match(plot.attributes['aria-label'], /Reported subtotal · 10 of 11/);
+  assert.match(tableRows(h, 'signups-chart')[1][1], /10 · Reported subtotal · 10 of 11/);
+  assert.equal(tableRows(h, 'signups-chart')[1][2], 'Not comparable');
+  data.reports[1].branches = data.reports[1].branches.filter(b => b.name !== 'San Rafael Northgate Library');
   h.win.location.hash = '#system=san-rafael';
-  assert.deepEqual(['registered-summary', 'signups-summary', 'notice-summary'].map(id => h.get(id).children[0].textContent), ['Not reported', 'Not reported', 'Not reported']);
-  assert.match(h.get('status').textContent, /No data for 1 mapped member/);
-  h.win.location.hash = '#branch=mall';
-  assert.equal(h.get('branch').value, 'mall');
+  assert.deepEqual(['registered-summary', 'signups-summary', 'notice-summary'].map(id => h.get(id).children[0].textContent), ['20', '2', '6']);
+  assert.match(h.get('status').textContent, /No data for 1 mapped member branch\(es\): Northgate Library/);
+  assert.match(h.get('notice-total-note').textContent, /Reported subtotal · 2 of 3 branches reported/);
+  assert.equal(tableRows(h, 'notices')[0][1], '2 · Reported subtotal · 2 of 3 branches reported');
+  assert.equal(tableRows(h, 'items')[0][1], '8 · Reported subtotal · 2 of 3 branches reported');
+  assert.equal(tableRows(h, 'items')[0][3], 'Not comparable');
+  h.win.location.hash = '#branch=san-rafael-northgate-library';
+  assert.equal(h.get('branch').value, 'san-rafael-northgate-library');
   assert.match(h.get('status').textContent, /No data/);
   assert.equal(h.get('registered-summary').children[0].textContent, 'Not reported');
-  assert.equal(h.get('branch').children.find(o => o.value === 'mall').textContent.trim(), 'Mall');
+  assert.equal(h.get('branch').children.find(o => o.value === 'san-rafael-northgate-library').textContent.trim(), 'Northgate Library');
 });
 
 test('group notices sum per-branch totals/fallbacks and reject unsafe sums, while zero stays known', () => {
   const group = { members: ['A', 'B'] };
   const report = { branches: [{ name: 'A', metrics: { notice_total: 7 } }, { name: 'B', metrics: { holds: 1, reminders: 0, overdue: 2 } }], totals: { holds: 999 }, registrations: { users: 999 } };
   assert.equal(dashboard.metricValue(report, group, 'notices'), 10);
-  assert.equal(dashboard.metricValue(report, group, 'holds'), undefined);
+  assert.equal(dashboard.metricValue(report, group, 'holds'), 1);
+  assert.deepEqual(dashboard.metricCoverage(report, group, 'holds'), { value: 1, members: ['B'], total: 2 });
   report.branches.forEach(b => { b.metrics = { registered: 0, signups: 0, holds: 0, reminders: 0, overdue: 0 }; });
   assert.equal(dashboard.metricValue(report, group, 'registered'), 0);
   assert.equal(dashboard.metricValue(report, group, 'signups'), 0);
@@ -847,6 +877,125 @@ test('group notices sum per-branch totals/fallbacks and reject unsafe sums, whil
   report.branches.forEach(b => { b.metrics = { registered: Number.MAX_SAFE_INTEGER, holds: Number.MAX_SAFE_INTEGER, reminders: 1, overdue: 1 }; });
   assert.equal(dashboard.metricValue(report, group, 'registered'), undefined);
   assert.equal(dashboard.metricValue(report, group, 'notices'), undefined);
+});
+
+test('partial metrics compare and connect only when the reporting members are identical', () => {
+  const data = groupedData(), system = data.systems[0];
+  for (const report of data.reports) delete report.branches.find(b => b.name === 'Bolinas').metrics.registered;
+  data.reports[1].branches.find(b => b.name === 'Novato Library').metrics.registered = 12;
+  const h = domHarness(data, '#system=mcfl');
+  assert.equal(h.get('registered-summary').children[0].textContent, '102');
+  assert.match(h.get('registered-summary').textContent, /Reported subtotal · 10 of 11/);
+  assert.match(h.get('registered-summary').textContent, /2 more than September 2026/);
+  assert.match(tableRows(h, 'registered-chart')[1][2], /\+2 \(\+2%\)/);
+  assert.equal(dashboard.priorMetricValue(data.reports[1], data.reports[0], system, 'registered'), 100);
+  let plot = h.get('registered-chart').children.find(n => n.tagName === 'svg');
+  assert.equal(plot.children.filter(n => n.tagName === 'polyline').length, 1);
+  // Same coverage count, different contributors: neither delta nor connecting line is valid.
+  data.reports[1].branches.find(b => b.name === 'Bolinas').metrics.registered = 10;
+  delete data.reports[1].branches.find(b => b.name === 'Bookmobile').metrics.registered;
+  h.resize(true);
+  assert.match(h.get('registered-summary').textContent, /10 of 11/);
+  assert.match(h.get('registered-summary').textContent, /Not comparable/);
+  assert.equal(tableRows(h, 'registered-chart')[1][2], 'Not comparable');
+  assert.equal(dashboard.priorMetricValue(data.reports[1], data.reports[0], system, 'registered'), undefined);
+  plot = h.get('registered-chart').children.find(n => n.tagName === 'svg');
+  assert.equal(plot.children.filter(n => n.tagName === 'circle').length, 2);
+  assert.equal(plot.children.filter(n => n.tagName === 'polyline').length, 0);
+  // Other metrics still compare normally; coverage is metric-specific.
+  assert.match(h.get('signups-summary').textContent, /No change from September 2026/);
+  assert.match(h.get('comparison-note').textContent, /matching coverage counts alone are not sufficient/);
+});
+
+test('system coverage preserves no data, explicit zero, and overflow without notice-component mixing', () => {
+  const data = groupedData(), report = data.reports[1], system = data.systems[0];
+  for (const branch of report.branches) branch.metrics = {};
+  const h = domHarness(data, '#system=mcfl');
+  assert.equal(h.get('registered-summary').children[0].textContent, 'Not reported');
+  assert.match(h.get('registered-summary').textContent, /0 of 11 branches reported · no subtotal available/);
+  report.branches.find(b => b.name === 'Bolinas').metrics = { registered: 0, holds: 1 };
+  report.branches.find(b => b.name === 'Bookmobile').metrics = { registered: Number.MAX_SAFE_INTEGER, reminders: 2, overdue: 3 };
+  assert.equal(dashboard.metricValue(report, system, 'notices'), undefined);
+  h.resize(true);
+  assert.equal(h.get('notice-total').textContent, 'Not reported');
+  assert.equal(h.get('notice-summary').children[0].textContent, 'Not reported');
+  assert.match(h.get('notice-total-note').textContent, /0 of 11/);
+  // Partial component sums cannot manufacture a notice total across different branches.
+  assert.equal(tableRows(h, 'notices')[0][1], '1 · Reported subtotal · 1 of 11 branches reported');
+  delete report.branches.find(b => b.name === 'Bookmobile').metrics.registered;
+  h.resize(false);
+  assert.equal(h.get('registered-summary').children[0].textContent, '0');
+  assert.match(h.get('registered-summary').textContent, /Reported subtotal · 1 of 11/);
+  report.branches.find(b => b.name === 'Bolinas').metrics.registered = Number.MAX_SAFE_INTEGER;
+  report.branches.find(b => b.name === 'Bookmobile').metrics.registered = 1;
+  h.resize(true);
+  assert.equal(h.get('registered-summary').children[0].textContent, 'Not reported');
+  assert.match(h.get('registered-summary').textContent, /2 of 11 branches reported · sum exceeds safe integer range/);
+  assert.equal(dashboard.priorMetricValue(report, undefined, system, 'registered'), undefined);
+});
+
+test('sparse source-shaped CSVs generate useful offline subtotals with independent metric coverage', t => {
+  const dir = fixture(t), out = path.join(dir, 'report.html');
+  const text = `Branch::,Novato Library
+Hold text notices sent,for the month,4
+Hold text reminders notices sent,for the month,2
+Hold text reminders sent for the month = 2
+Overdue text notices sent,for the month,3
+Branch::,Civic Center Library
+Overdue text notices sent,for the month,1
+Branch::,San Rafael Downtown Library
+Hold text notices sent,for the month,5
+...TOTALS...
+Hold text notices sent,for the month,999
+Hold text reminders notices sent,for the month,999
+Overdue text notices sent,for the month,999
+...TOTALS BY BRANCH...
+Novato Library sent for the month,this many text notices,9
+Novato Library sent for the month,this many text notices,9
+Civic Center Library sent for the month,this many text notices,1
+San Rafael Downtown Library sent for the month,this many text notices,5
+...TOTALS OF REGISTERED PATRON BY BRANCH...
+Novato Library,has,10,registered patrons for text notices
+Civic Center Library,has,3,registered patrons for text notices
+Corte Madera Library,has,2,registered patrons for text notices
+San Rafael Downtown Library,has,7,registered patrons for text notices
+San Rafael Pickleweed Library,has,2,registered patrons for text notices
+Unassigned Library,has,50,registered patrons for text notices
+...FREQUENCY OF KEYWORD USAGE...
+RENEW was used 7 times.
+Total registered users for your branches = 500
+Registered users the last month = 100
+Novato Library signed up 2 patron(s) for text notices the last month
+San Rafael Downtown Library signed up 1 patron(s) for text notices the last month
+signed up 7 patron(s) for text notices the last month
+`;
+  const files = ['2026-09', '2026-10'].map(period => input(dir, period, text));
+  const result = run(dir, ['--output', out, ...files]);
+  assert.equal(result.status, 0, result.stderr);
+  const html = fs.readFileSync(out, 'utf8'), data = embedded(html), js = html.match(/<script>\n(.*?)<\/script>/s)[1];
+  const h = domHarness(data, '#system=mcfl&extra=kept', js, html);
+  assert.deepEqual(['registered-summary', 'signups-summary', 'notice-summary'].map(id => h.get(id).children[0].textContent), ['15', '2', '10']);
+  assert.match(h.get('registered-summary').textContent, /Reported subtotal · 3 of 11/);
+  assert.match(h.get('signups-summary').textContent, /Reported subtotal · 1 of 11/);
+  assert.match(h.get('notice-summary').textContent, /Reported subtotal · 2 of 11/);
+  assert.match(h.get('registered-summary').textContent, /No change from September 2026/);
+  assert.match(h.get('notice-total-note').textContent, /Reported subtotal · 2 of 11/);
+  assert.equal(tableRows(h, 'notices')[0][1], '4 · Reported subtotal · 1 of 11 branches reported');
+  assert.equal(h.get('keyword-summary').children[0].textContent, '7');
+  assert.match(h.get('system-registrations').textContent, /snapshot\): 500/);
+  assert.match(h.get('unattributed').textContent, /7 signup/);
+  h.get('branch').value = 'system:san-rafael'; h.get('branch').fire('change');
+  assert.deepEqual(['registered-summary', 'signups-summary', 'notice-summary'].map(id => h.get(id).children[0].textContent), ['9', '1', '5']);
+  assert.match(h.get('registered-summary').textContent, /2 of 3/);
+  assert.match(h.get('status').textContent, /Northgate Library/);
+  h.get('branch').value = 'all'; h.get('branch').fire('change');
+  assert.deepEqual(['registered-summary', 'signups-summary', 'notice-summary'].map(id => h.get(id).children[0].textContent), ['500', '100', '2,997']);
+  assert.ok(!h.get('registered-summary').textContent.includes('Reported subtotal'));
+  h.back(); assert.equal(h.get('title').textContent, 'San Rafael');
+  h.back(); assert.equal(h.get('title').textContent, 'MCFL');
+  assert.match(h.win.location.hash, /extra=kept/);
+  assert.ok(!/<(?:script|link)[^>]+(?:src|href)=/i.test(html));
+  assert.ok(!html.includes('Mall'));
 });
 
 test('CLI embeds library mapping offline, retains old IDs, and malformed mapping preserves output', t => {

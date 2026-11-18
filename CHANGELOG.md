@@ -2,6 +2,9 @@
 
 ## 2026-11-18
 
+- Changed library-system counts to reported-member subtotals with per-metric coverage in summaries, tables, and chart accessibility text; missing data is not zero, and no-data/unsafe sums stay unknown. Changes and connected chart lines require identical reporting members in adjacent months; all-branches totals and individual-branch counts remain unchanged.
+- Corrected San Rafael's Mall mapping to Northgate Library with exact source alias `San Rafael Northgate Library`, removing Mall entirely. Verified observed member names against the supplied August–October CSVs and added synthetic regression coverage for sparse reports, subtotal coverage/comparability, and Northgate selection.
+
 - Added version-controlled MCFL/San Rafael library mappings and a single selector with selectable system entries, indented member branches, and unassigned branches afterward. Exact aliases preserve existing source branch IDs; absent mapped branches remain selectable with no-data notices, and ambiguous mappings fail before replacing output.
 - Added member-only system totals/charts/detail with strict missing-data handling, separate notice/item counts, and no added source-wide totals or unattributed signups. New `#system=` links synchronize with report selection and Back/Forward without breaking `#branch=` links; all-branches totals and source-wide context remain unchanged, and membership applies across all included months.
 - Added synthetic coverage for mappings, selector ordering, aggregation/overflow/unknowns, offline generation, and system/branch navigation; documented mapping maintenance and interpretation limits.

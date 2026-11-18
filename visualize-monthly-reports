@@ -9,7 +9,8 @@ const HELP = `Usage: ./visualize-monthly-reports [options] FILE.csv [FILE.csv ..
 Create a self-contained, offline HTML dashboard from monthly Shoutbomb reports.
 Branch/system selection is bookmarkable: #branch=novato-library or #system=mcfl
 Library membership is maintained in lib/monthly-library-groups.json (exact aliases).
-System totals require every mapped member's value; missing data is not zero.
+System counts show reported-member subtotals with coverage; missing data is not zero.
+System changes and connected chart lines require identical reporting members.
 
 Options:
   --output FILE       HTML destination (default: project data/monthly-visualizations/index.html)

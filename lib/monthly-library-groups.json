@@ -23,7 +23,7 @@
     "branches": [
       { "name": "San Rafael Downtown", "sources": ["San Rafael Downtown", "San Rafael Downtown Library"] },
       { "name": "Pickleweed", "sources": ["Pickleweed", "San Rafael Pickleweed Library"] },
-      { "name": "Mall", "sources": ["Mall"] }
+      { "name": "Northgate Library", "sources": ["Northgate Library", "San Rafael Northgate Library"] }
     ]
   }
 ]
