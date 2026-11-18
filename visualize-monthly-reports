@@ -3,11 +3,13 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { parseReport, generatedDate, namedPeriod, validPeriod, branchIds, digest, canonical, serialize } = require('./lib/monthly-report.cjs');
+const { parseReport, generatedDate, namedPeriod, validPeriod, branchIds, libraryGroups, digest, canonical, serialize } = require('./lib/monthly-report.cjs');
 const HELP = `Usage: ./visualize-monthly-reports [options] FILE.csv [FILE.csv ...]
 
 Create a self-contained, offline HTML dashboard from monthly Shoutbomb reports.
-Branch selection is bookmarkable: report.html#branch=novato-library
+Branch/system selection is bookmarkable: #branch=novato-library or #system=mcfl
+Library membership is maintained in lib/monthly-library-groups.json (exact aliases).
+System totals require every mapped member's value; missing data is not zero.
 
 Options:
   --output FILE       HTML destination (default: project data/monthly-visualizations/index.html)
@@ -84,9 +86,10 @@ function main(args) {
   }
   reports.sort((a, b) => a.period.localeCompare(b.period));
   const branches = branchIds([...new Set(reports.flatMap(report => report.branches.map(b => b.name)))].sort());
+  const groups = libraryGroups(branches, JSON.parse(fs.readFileSync(path.join(__dirname, 'lib/monthly-library-groups.json'), 'utf8')));
   const template = fs.readFileSync(path.join(__dirname, 'lib/monthly-dashboard.html'), 'utf8');
   const script = fs.readFileSync(path.join(__dirname, 'lib/monthly-dashboard.js'), 'utf8');
-  const html = template.replace('/*__DASHBOARD_SCRIPT__*/', () => script).replace('/*__DASHBOARD_DATA__*/', () => serialize({ reports, branches }));
+  const html = template.replace('/*__DASHBOARD_SCRIPT__*/', () => script).replace('/*__DASHBOARD_DATA__*/', () => serialize({ reports, ...groups }));
   fs.mkdirSync(path.dirname(output), { recursive: true });
   // A private, unique temporary directory on the same filesystem ensures atomic publication.
   const stage = fs.mkdtempSync(path.join(path.dirname(output), '.visualize-'));

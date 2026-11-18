@@ -124,9 +124,9 @@ footer{border-top:1px solid var(--line);padding-top:1.25rem;font-size:.8rem;colo
 <body>
 <main>
 <header><h1>Shoutbomb monthly report</h1><p class="report-context"><span id="heading-period"></span><span class="context-divider" aria-hidden="true"> / </span><span id="title">All branches</span></p>
-<noscript><p class="notice">Enable JavaScript to select branches and display this offline report.</p></noscript>
+<noscript><p class="notice">Enable JavaScript to select branches or library systems and display this offline report.</p></noscript>
 <div class="toolbar">
-<label>Branch<select id="branch" aria-label="Branch"></select></label>
+<label>Library / branch<select id="branch" aria-label="Library system or branch"></select></label>
 <label id="report-control">Report<select id="report" aria-label="Report"></select></label>
 <button id="print" type="button">Print</button><a id="permalink" href="#">Link to this view</a>
 </div>
@@ -146,7 +146,7 @@ footer{border-top:1px solid var(--line);padding-top:1.25rem;font-size:.8rem;colo
 <section class="detail-section" aria-labelledby="items-heading"><h4 id="items-heading">Overdue items · Not messages</h4><div id="items" class="table-scroll"></div><p id="renewals" class="source-note"></p></section>
 <section class="detail-section" aria-labelledby="system-heading"><h4 id="system-heading">System-wide registration totals</h4><p class="section-intro">All branches · Not branch-specific</p><p id="unattributed" class="notice"></p><div id="system-registrations"></div><details><summary>Source-reported renewal percentages</summary><div id="system-percentages"></div></details></section>
 </section>
-<section class="detail-group" aria-labelledby="branches-heading"><h3 id="branches-heading" class="jump-target" tabindex="-1">Branch comparisons</h3><p class="section-intro">Selected month · Alphabetical, not ranked. Select a branch name to focus its metrics. Missing counts remain unknown.</p><div id="comparison"></div></section>
+<section class="detail-group" aria-labelledby="branches-heading"><h3 id="branches-heading" class="jump-target" tabindex="-1">Branch comparisons</h3><p id="comparison-scope" class="section-intro">Selected month · Alphabetical, not ranked. Select a branch name to focus its metrics. Missing counts remain unknown.</p><div id="comparison"></div></section>
 <section class="detail-group" aria-labelledby="quality-heading"><h3 id="quality-heading" class="jump-target" tabindex="-1">Sources &amp; interpretation</h3><p id="period-note" class="source-note"></p><p id="comparison-note" class="source-note"></p><p id="source" class="source"></p><p id="quality-summary"></p><ul id="quality"></ul><div id="sources" class="table-scroll"></div></section>
 </section>
 <footer>This offline file includes all months and branches, even when one is selected. Selection is not access control. Share only with the intended audience. No external services, fonts, or analytics are used.</footer>

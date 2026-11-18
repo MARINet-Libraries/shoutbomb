@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-18
+
+- Added version-controlled MCFL/San Rafael library mappings and a single selector with selectable system entries, indented member branches, and unassigned branches afterward. Exact aliases preserve existing source branch IDs; absent mapped branches remain selectable with no-data notices, and ambiguous mappings fail before replacing output.
+- Added member-only system totals/charts/detail with strict missing-data handling, separate notice/item counts, and no added source-wide totals or unattributed signups. New `#system=` links synchronize with report selection and Back/Forward without breaking `#branch=` links; all-branches totals and source-wide context remain unchanged, and membership applies across all included months.
+- Added synthetic coverage for mappings, selector ordering, aggregation/overflow/unknowns, offline generation, and system/branch navigation; documented mapping maintenance and interpretation limits.
+
 ## 2026-11-17
 
 - Corrected the monthly downloader's remote destination to `/monthly_report/Processed/` (capital `P`) for listing, creation, conflict checks, and moves; updated help, documentation, and mocked tests.

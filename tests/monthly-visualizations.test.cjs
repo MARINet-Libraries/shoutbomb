@@ -711,3 +711,164 @@ test('headline changes use neutral conversational labels without altering compac
   assert.equal(dashboard.summaryChange(5, undefined, null), 'Not comparable · previous calendar month unavailable');
   assert.equal(dashboard.change(81, 71).text, '+10 (+14.1%)');
 });
+
+const libraryMapping = require('../lib/monthly-library-groups.json');
+function groupedData() {
+  // Every mapped member is synthetic, including those absent in production inputs.
+  const text = libraryMapping.flatMap(system => system.branches.map(member => {
+    const name = member.sources.at(-1);
+    return `Branch::,${name}\nHold text notices sent,for the month,1\nHold text reminders notices sent,for the month,1\nHold text reminders sent for the month = 1\nOverdue text notices sent,for the month,1\nOverdue items eligible for renewal text notices sent,for the month,4\nOverdue items ineligible for renewal text notices sent,for the month,5\nOverdue (text) items renewed successfully by patrons,for the month,2\nOverdue (text) items unsuccessfully renewed by patrons,for the month,1\n${name} signed up 1 patron(s) for text notices the last month`;
+  })).join('\n') + '\n...TOTALS OF REGISTERED PATRON BY BRANCH...\n' +
+    libraryMapping.flatMap(s => s.branches.map(b => `${b.sources.at(-1)},has,10,registered patrons for text notices`)).join('\n') +
+    '\nUnassigned Library,has,20,registered patrons for text notices\n...TOTALS...\nHold text notices sent,for the month,999\nHold text reminders notices sent,for the month,999\nOverdue text notices sent,for the month,999\n...FREQUENCY OF KEYWORD USAGE...\nRENEW was used 7 times.\nTotal registered users for your branches = 500\nRegistered users the last month = 100\nsigned up 7 patron(s) for text notices the last month\n';
+  const report = parser.parseReport(text);
+  return { ...parser.libraryGroups(parser.branchIds(report.branches.map(b => b.name)), libraryMapping),
+    reports: [{ ...structuredClone(report), id: 'older', period: '2026-09', source: 'older.csv' }, { ...report, id: 'latest', period: '2026-10', source: 'latest.csv' }] };
+}
+
+test('explicit library mapping retains source IDs, missing members, exact aliases, and unassigned branches', () => {
+  const original = parser.branchIds(['Novato Library', 'Not Novato Library', 'San Rafael Pickleweed Library']);
+  const groups = parser.libraryGroups(original, libraryMapping);
+  assert.deepEqual(original, parser.branchIds(['Novato Library', 'Not Novato Library', 'San Rafael Pickleweed Library']));
+  assert.equal(groups.branches.find(b => b.name === 'Novato Library').id, 'novato-library');
+  assert.equal(groups.branches.find(b => b.name === 'Novato Library').label, 'Novato');
+  assert.ok(groups.systems[0].members.includes('Novato Library'));
+  assert.ok(groups.systems[1].members.includes('San Rafael Pickleweed Library'));
+  assert.ok(!groups.systems.some(s => s.members.includes('Not Novato Library')));
+  assert.equal(groups.branches.find(b => b.name === 'Mall').id, 'mall');
+  assert.equal(groups.systems[0].members.length, 11);
+  assert.equal(groups.systems[1].members.length, 3);
+  assert.throws(() => parser.libraryGroups(parser.branchIds(['Novato', 'Novato Library']), libraryMapping), /multiple source labels/);
+  const bad = structuredClone(libraryMapping); bad[1].branches[0].sources.push('Novato Library');
+  assert.throws(() => parser.libraryGroups([], bad), /overlapping/);
+  assert.throws(() => parser.libraryGroups([], [libraryMapping[0], libraryMapping[0]]), /duplicate/);
+  assert.throws(() => parser.libraryGroups([], {}), /must be an array/);
+  const collision = parser.libraryGroups(parser.branchIds(['A-B']), [{ id: 'test', name: 'Test', branches: [{ name: 'A B', sources: ['A B'] }] }]);
+  assert.equal(collision.branches[0].id, 'a-b');
+  assert.notEqual(collision.branches[1].id, 'a-b');
+});
+
+test('one selector offers selectable systems with indented members, then ungrouped branches', () => {
+  const data = groupedData(), h = domHarness(data, '');
+  const options = h.get('branch').children;
+  assert.equal(options[0].textContent, 'All branches');
+  assert.equal(options[1].textContent, 'MCFL');
+  assert.equal(options[1].value, 'system:mcfl');
+  assert.deepEqual(options.slice(2, 13).map(o => o.textContent), libraryMapping[0].branches.map(b => `\u00a0\u00a0\u00a0\u00a0${b.name}`));
+  assert.equal(options[13].textContent, 'San Rafael');
+  assert.equal(options[13].value, 'system:san-rafael');
+  assert.deepEqual(options.slice(14, 17).map(o => o.textContent.trim()), ['San Rafael Downtown', 'Pickleweed', 'Mall']);
+  assert.equal(options[17].textContent, 'Unassigned Library');
+  assert.ok(options.every(o => o.tagName === 'option')); // System options are selectable, not disabled optgroup labels.
+});
+
+test('library views sum members once, separate items and notices, and retain all-branches context', () => {
+  const data = groupedData(), h = domHarness(data, '#system=mcfl');
+  assert.equal(h.get('title').textContent, 'MCFL');
+  assert.deepEqual(['registered-summary', 'signups-summary', 'notice-summary'].map(id => h.get(id).children[0].textContent), ['110', '11', '33']);
+  assert.equal(h.get('notice-total').textContent, '33');
+  assert.match(h.get('notice-total-note').textContent, /each branch counted once/);
+  assert.deepEqual(tableRows(h, 'notices').map(row => row[1]), ['11', '11', '11']);
+  assert.deepEqual(tableRows(h, 'items').map(row => row[1]), ['44', '55', '22', '11']);
+  assert.equal(h.get('keyword-summary').children[0].textContent, '7');
+  assert.match(h.get('system-registrations').textContent, /snapshot\): 500/);
+  assert.match(h.get('unattributed').textContent, /7 signup/);
+  assert.match(h.get('quality').textContent, /not historical membership/);
+  assert.match(h.get('scope-note').textContent, /11 mapped branches/);
+  assert.equal(tableRows(h, 'comparison').length, 11);
+  assert.match(h.get('comparison-scope').textContent, /MCFL member branches/);
+  h.win.location.hash = '#system=san-rafael';
+  assert.equal(h.get('registered-summary').children[0].textContent, '30');
+  assert.equal(h.get('notice-summary').children[0].textContent, '9');
+  assert.equal(tableRows(h, 'comparison').length, 3);
+  h.win.location.hash = '#branch=all';
+  assert.equal(h.get('registered-summary').children[0].textContent, '500');
+  assert.equal(h.get('signups-summary').children[0].textContent, '100');
+  assert.equal(h.get('notice-summary').children[0].textContent, '2,997');
+  assert.equal(tableRows(h, 'comparison').length, 15);
+});
+
+test('system/report navigation preserves old branch links, extras, jumps, and Back/Forward', () => {
+  const h = domHarness(groupedData(), '#branch=novato-library&report=older&extra=kept');
+  h.get('branch').value = 'system:mcfl'; h.get('branch').fire('change');
+  assert.match(h.win.location.hash, /system=mcfl/);
+  assert.ok(!h.win.location.hash.includes('branch='));
+  assert.match(h.win.location.hash, /extra=kept/);
+  assert.equal(h.get('report').value, 'older');
+  h.get('report').value = 'latest'; h.get('report').fire('change');
+  assert.equal(h.get('branch').value, 'system:mcfl');
+  assert.equal(h.get('permalink').href, h.win.location.hash);
+  const beforeJump = h.win.location.hash;
+  h.get('jump-sources').fire('click'); assert.equal(h.win.location.hash, beforeJump);
+  h.resize(true); assert.equal(h.get('branch').value, 'system:mcfl');
+  h.back(); assert.equal(h.get('report').value, 'older');
+  h.back(); assert.equal(h.get('title').textContent, 'Novato Library');
+  h.forward(); assert.equal(h.get('title').textContent, 'MCFL');
+  const novato = h.get('comparison').children[0].children.find(n => n.tagName === 'tbody' && n.children[0].textContent === 'Novato Library');
+  h.win.location.hash = novato.children[0].children[0].children[0].href;
+  assert.ok(!h.win.location.hash.includes('system='));
+  assert.equal(h.get('title').textContent, 'Novato Library');
+  h.win.location.hash = '#system=unknown&branch=novato-library&report=older';
+  assert.equal(h.get('title').textContent, 'All branches');
+  assert.match(h.get('status').textContent, /Unknown library system/);
+  h.get('print').fire('click'); assert.equal(h.win.printed, true);
+});
+
+test('missing members and metrics leave system totals unknown, never partial or zero, and break chart lines', () => {
+  const data = groupedData();
+  delete data.reports[1].branches.find(b => b.name === 'Bolinas').metrics.signups;
+  const h = domHarness(data, '#system=mcfl');
+  assert.equal(h.get('registered-summary').children[0].textContent, '110');
+  assert.equal(h.get('signups-summary').children[0].textContent, 'Not reported');
+  assert.match(h.get('signups-summary').textContent, /Not comparable/);
+  const plot = h.get('signups-chart').children.find(n => n.tagName === 'svg');
+  assert.equal(plot.children.filter(n => n.tagName === 'circle').length, 1);
+  assert.equal(plot.children.filter(n => n.tagName === 'polyline').length, 0);
+  data.reports[1].branches = data.reports[1].branches.filter(b => b.name !== 'Mall');
+  h.win.location.hash = '#system=san-rafael';
+  assert.deepEqual(['registered-summary', 'signups-summary', 'notice-summary'].map(id => h.get(id).children[0].textContent), ['Not reported', 'Not reported', 'Not reported']);
+  assert.match(h.get('status').textContent, /No data for 1 mapped member/);
+  h.win.location.hash = '#branch=mall';
+  assert.equal(h.get('branch').value, 'mall');
+  assert.match(h.get('status').textContent, /No data/);
+  assert.equal(h.get('registered-summary').children[0].textContent, 'Not reported');
+  assert.equal(h.get('branch').children.find(o => o.value === 'mall').textContent.trim(), 'Mall');
+});
+
+test('group notices sum per-branch totals/fallbacks and reject unsafe sums, while zero stays known', () => {
+  const group = { members: ['A', 'B'] };
+  const report = { branches: [{ name: 'A', metrics: { notice_total: 7 } }, { name: 'B', metrics: { holds: 1, reminders: 0, overdue: 2 } }], totals: { holds: 999 }, registrations: { users: 999 } };
+  assert.equal(dashboard.metricValue(report, group, 'notices'), 10);
+  assert.equal(dashboard.metricValue(report, group, 'holds'), undefined);
+  report.branches.forEach(b => { b.metrics = { registered: 0, signups: 0, holds: 0, reminders: 0, overdue: 0 }; });
+  assert.equal(dashboard.metricValue(report, group, 'registered'), 0);
+  assert.equal(dashboard.metricValue(report, group, 'signups'), 0);
+  assert.equal(dashboard.metricValue(report, group, 'notices'), 0);
+  report.branches.forEach(b => { b.metrics = { registered: Number.MAX_SAFE_INTEGER, holds: Number.MAX_SAFE_INTEGER, reminders: 1, overdue: 1 }; });
+  assert.equal(dashboard.metricValue(report, group, 'registered'), undefined);
+  assert.equal(dashboard.metricValue(report, group, 'notices'), undefined);
+});
+
+test('CLI embeds library mapping offline, retains old IDs, and malformed mapping preserves output', t => {
+  const dir = fixture(t), out = path.join(dir, 'report.html'), file = input(dir);
+  const result = run(dir, ['--output', out, file]);
+  assert.equal(result.status, 0, result.stderr);
+  const html = fs.readFileSync(out, 'utf8'), data = embedded(html);
+  assert.equal(data.systems[0].id, 'mcfl');
+  assert.equal(data.branches.find(b => b.name === 'Novato Library').id, 'novato-library');
+  const js = html.match(/<script>\n(.*?)<\/script>/s)[1];
+  const h = domHarness(data, '#system=san-rafael', js, html);
+  assert.equal(h.get('title').textContent, 'San Rafael');
+  assert.match(h.get('status').textContent, /No data/);
+  assert.equal(h.get('registered-summary').children[0].textContent, 'Not reported');
+  // Copy only source files into a temporary project to test invalid configuration.
+  const project = path.join(dir, 'project'); fs.mkdirSync(path.join(project, 'lib'), { recursive: true });
+  for (const name of ['visualize-monthly-reports', 'lib/monthly-report.cjs', 'lib/monthly-dashboard.html', 'lib/monthly-dashboard.js']) {
+    fs.copyFileSync(path.resolve(__dirname, '..', name), path.join(project, name));
+  }
+  fs.writeFileSync(path.join(project, 'lib/monthly-library-groups.json'), '{}');
+  const failed = spawnSync(process.execPath, [path.join(project, 'visualize-monthly-reports'), '--output', out, file], { cwd: dir, encoding: 'utf8' });
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /mapping must be an array/);
+  assert.equal(fs.readFileSync(out, 'utf8'), html);
+});
