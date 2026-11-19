@@ -1,6 +1,6 @@
 # shoutbomb
 
-Exports Sierra/PostgreSQL report data to CSV and can upload selected CSVs to Shoutbomb over SFTP.
+Exports Sierra/PostgreSQL report data to CSV, uploads selected CSVs to Shoutbomb over SFTP, and downloads Shoutbomb monthly statistics CSVs.
 
 ## Index
 
@@ -12,6 +12,8 @@ Exports Sierra/PostgreSQL report data to CSV and can upload selected CSVs to Sho
 - [Common tasks](#common-tasks)
   - [Generate reports](#generate-reports)
   - [Upload reports](#upload-reports)
+  - [Download monthly statistics](#download-monthly-statistics)
+  - [Visualize monthly statistics](#visualize-monthly-statistics)
   - [Run the monitored generate-and-upload workflow](#run-the-monitored-generate-and-upload-workflow)
   - [Archive old files](#archive-old-files)
   - [Show help](#show-help)
@@ -35,6 +37,8 @@ If you are trying to find where something lives:
 | change report SQL | `sql/*.sql` |
 | generate CSVs from SQL | `./generate-reports` |
 | change upload behavior or destinations | `./upload` |
+| download Shoutbomb monthly statistics | `./download-monthly-reports` |
+| visualize monthly statistics for branch staff | `./visualize-monthly-reports` |
 | run or change monitored cron workflows | `services/` |
 | archive or prune old CSVs manually | `./archive-reports` |
 | run monitored archive maintenance | `services/archive-reports` |
@@ -61,10 +65,13 @@ cp .env.example .env
 | --- | --- |
 | `./generate-reports` | Runs every `sql/*.sql` file by default and writes CSVs to `data/` |
 | `./upload` | Uploads the latest supported CSVs from `data/` to Shoutbomb |
+| `./download-monthly-reports` | Downloads missing monthly statistics CSVs into `data/monthly-reports/` |
+| `./visualize-monthly-reports` | Parses monthly statistics into an offline HTML dashboard with bookmarkable branch views |
+| `./services/download-monthly-reports` | Runs daily download polling with logging and Healthchecks.io monitoring |
 | `./services/generate-and-upload` | Runs a generate/upload cron workflow with logging and Healthchecks.io monitoring |
 | `./archive-reports` | Moves older CSVs from `data/` into `data/_archive/` and deletes sufficiently old archived CSVs |
 | `./services/archive-reports` | Runs archive maintenance with logging and Healthchecks.io monitoring |
-| `./check` | Runs Bash syntax checks, ShellCheck, and fully mocked Bats behavior tests, including help smoke tests |
+| `./check` | Runs Bash/JavaScript syntax checks, ShellCheck, fully mocked Bats behavior tests, and isolated dashboard tests |
 
 Typical workflow:
 
@@ -83,13 +90,20 @@ Typical workflow:
 ├── generate-reports
 ├── upload
 ├── archive-reports
+├── download-monthly-reports
+├── visualize-monthly-reports
 ├── check
 ├── lib/
-│   └── common.sh
+│   ├── common.sh
+│   ├── monthly-report.cjs
+│   ├── monthly-library-groups.json
+│   ├── monthly-dashboard.html
+│   └── monthly-dashboard.js
 ├── tests/
 ├── services/
 │   ├── generate-and-upload
 │   ├── archive-reports
+│   ├── download-monthly-reports
 │   └── lib/
 │       └── monitored-job.sh
 ├── sql/
@@ -111,8 +125,10 @@ You will need:
 - SSH/SFTP access to the Shoutbomb server
 - `curl` for Healthchecks.io monitoring of the cron workflow
 - `/usr/bin/logger` for cron workflow logging, unless `SHOUTBOMB_LOGGER_PATH` selects another executable
-- an SSH private key for uploads
+- an SSH private key for uploads and monthly downloads
 - a trusted SSH host key in `known_hosts` or an alternate `known_hosts` file
+
+The offline visualization script additionally requires **Node.js 18 or newer** and a browser with JavaScript enabled. It has no npm dependencies and needs none of the database, SSH, monitoring, or `.env` configuration above. `./check` also requires Node.js for dashboard tests.
 
 ### Configure `.env`
 
@@ -132,7 +148,7 @@ Then edit `.env` with real values.
 - `PGUSER`
 - `PGPASSWORD`
 
-#### Required for upload
+#### Required for upload and monthly downloads
 
 - `SSH_USERNAME`
 - `SSH_IDENTITY_FILE` (absolute path)
@@ -146,12 +162,15 @@ For example:
 - `HEALTHCHECKS_PRIMARY_REPORTS_URL`
 - `HEALTHCHECKS_RENEWALS_URL`
 - `HEALTHCHECKS_ARCHIVE_URL`
+- `HEALTHCHECKS_MONTHLY_DOWNLOAD_URL` (daily polling only)
+- `HEALTHCHECKS_MONTHLY_ARRIVAL_URL` (separate monthly check, selected by the optional `--arrival-healthcheck-url-env` service option)
 
 #### Optional for monitored service jobs
 
 - `SHOUTBOMB_LOGGER_PATH` (defaults to `/usr/bin/logger`; primarily useful for isolated tests)
+- `TZ` (optional system timezone override for monthly-arrival classification; match the monthly check's timezone)
 
-#### Optional for upload
+#### Optional for upload and monthly downloads
 
 - `SSH_HOST` (defaults to `ftp.shoutbomb.com`)
 - `SSH_PORT` (defaults to `22`)
@@ -169,6 +188,10 @@ PGPASSWORD=secret
 HEALTHCHECKS_PRIMARY_REPORTS_URL=https://hc-ping.com/your-primary-reports-check-uuid
 HEALTHCHECKS_RENEWALS_URL=https://hc-ping.com/your-renewals-check-uuid
 HEALTHCHECKS_ARCHIVE_URL=https://hc-ping.com/your-archive-check-uuid
+HEALTHCHECKS_MONTHLY_DOWNLOAD_URL=https://hc-ping.com/your-monthly-download-check-uuid
+HEALTHCHECKS_MONTHLY_ARRIVAL_URL=https://hc-ping.com/your-monthly-arrival-check-uuid
+# Optional; otherwise the system timezone determines the current calendar month:
+# TZ=Etc/UTC
 
 # Optional; monitored services default to /usr/bin/logger:
 # SHOUTBOMB_LOGGER_PATH=/usr/bin/logger
@@ -240,6 +263,98 @@ Useful to know:
 - strict SSH host key checking is always enabled
 - remote destination directories must already exist
 - not every generated report is uploadable; use the supported names above
+
+### Download monthly statistics
+
+Run manually, or use the daily monitored wrapper:
+
+```bash
+./download-monthly-reports
+./services/download-monthly-reports \
+  --healthcheck-url-env HEALTHCHECKS_MONTHLY_DOWNLOAD_URL \
+  --arrival-healthcheck-url-env HEALTHCHECKS_MONTHLY_ARRIVAL_URL
+```
+
+The downloader lists SFTP `/monthly_report` using the existing SSH credentials and strict host-key checking. It accepts only basenames of the form `sb_report_Month_YYYY_<identifier>_YYYY-MM-DD_HH_MM_SS.csv`, for example `sb_report_August_2026_2bbb0dbd32_2026-11-10_16_02_39.csv`, with a full English month name. The identifier may contain ASCII letters, digits, underscores, and hyphens. Other entries, including legacy `sb_generate_monthly_report_...` names, are ignored. The Month_YYYY label identifies activity; the trailing timestamp identifies generation.
+
+Files are saved under their original names in `data/monthly-reports/`. All missing matching files are downloaded, including historical files on the first run. Existing regular, non-symlink local files skip downloading by filename, even if their remote contents change; published filenames are assumed immutable until Shoutbomb confirms its correction policy. No CSV schema or reporting-period validation is performed.
+
+Once a complete local CSV exists, the downloader moves its remote source into `/monthly_report/Processed/` (capital `P`), preserving the basename and creating that remote directory if needed. This also applies to files downloaded before this behavior was introduced. A failed move leaves the local CSV intact and returns failure; the next run retries the move without downloading again or creating another arrival receipt. The remote source listing is the retry queue, so no separate move-state directory is needed. Files already in remote `Processed/` are not downloaded.
+
+Before each move, a successful destination listing is required and an existing matching basename is reported as a conflict, not overwritten. Resolve conflicts manually; no content comparison is performed. Do not run other remote movers/writers concurrently: SFTP's destination check and rename are not atomic together, and some servers allow rename to overwrite a destination created between those steps. The SSH account now needs permission to list/create `/monthly_report/Processed/` and rename files into it.
+
+Each transfer is staged under `data/monthly-reports/.download.lock/` and atomically renamed after SFTP reports success. Failed transfers are removed and retried next run; other files continue downloading. Completed files are created with owner-only permissions. Existing upload and archive scripts do not scan this subdirectory; downloads are retained without automatic deletion and must remain here for filename-based deduplication and move retries. Moving the remote source does not move or delete the local CSV; local data processing remains separate.
+
+A successful poll with no new files or pending move failures returns zero. Configuration, listing, transfer, publication, remote-directory/move/conflict, or lock failures return 1; usage errors return 2; missing `sftp` returns 127. The summary reports downloaded/skipped/ignored/failed counts and adds `moved` for completed remote moves. `skipped` counts skipped downloads whose remote moves are still attempted; a successfully downloaded file can also count as failed if its remote move fails. `--host`, `--port`, and `--verbose` (or `-H`, `-P`, `-v`) work on both entrypoints; the root script validates downloader arguments. The service preserves the logger pipeline's status, as existing services do.
+
+Overlapping runs fail rather than silently skipping. Normal exits and HUP/INT/TERM clean up staging and the lock. After a machine crash or forced kill, verify no downloader is active before manually removing `data/monthly-reports/.download.lock/`; the next run retries incomplete downloads and remote moves for completed local files still listed at the remote source.
+
+The service logs under `shoutbomb-download-monthly-reports` and uses the shared best-effort start/success/failure lifecycle. Configure `HEALTHCHECKS_MONTHLY_DOWNLOAD_URL` for **daily polling**: success means the poll completed, not that a new monthly file arrived.
+
+#### Separate monthly-arrival monitoring
+
+Enable `--arrival-healthcheck-url-env HEALTHCHECKS_MONTHLY_ARRIVAL_URL` to notify a second check when a **newly downloaded** file's **trailing generation date** is in the current calendar month. The Month_YYYY activity label does not determine arrival eligibility: an August activity report generated and downloaded in November counts as a November arrival. This preserves the generation-month arrival proxy, not a guarantee that the expected activity report has arrived. The calendar month uses the system timezone (or `TZ` in `.env`). Files with historical/future generation months and existing local files do not count. Several eligible downloads in one run produce one arrival success ping; additional new eligible files can produce another. The two resolved check URLs must differ.
+
+Only arrival **success** pings go to this second check, never daily `/start` or `/fail` pings. Daily no-op successes do not refresh it. Completed eligible downloads still count if a remote move, another transfer, or the logging pipeline fails; the daily check continues to reflect that failure independently. Omit the arrival option to retain daily-only operation.
+
+Configure the second check with a **calendar-month schedule and grace period**, not a fixed 30-day interval. For example, expecting a ping from the 1st with a nine-day grace period gives a deadline around the 10th; choose the exact deadline and timezone in Healthchecks.io and verify its displayed next deadline. Reports typically arrive during the first week. The scripts impose no overdue deadline and never send an overdue failure themselves; monitoring flags a missing arrival. Check that early-in-window arrivals satisfy the intended monthly cycle.
+
+For durable retry state the service passes `--receipt-dir` to the downloader, using `data/monthly-reports/.arrival-state/pending/`. Each receipt is named after its CSV and contains the download month as `YYYY-MM`. The receipt is persisted before atomic CSV publication; a receipt alone is not proof of a completed transfer. Consumers require the corresponding completed regular, non-symlink CSV as well. Publication/receipt errors fail the downloader; no human log parsing is used. Ordinary manual downloads without `--receipt-dir` do not generate arrival evidence later merely by enabling monitoring.
+
+Failed arrival pings (including missing `curl`) leave receipts for the next daily invocation, even if no files are downloaded then. Successful acknowledgment removes only that notification batch's receipts. Historical/mismatched receipts and retries from earlier months are discarded without a ping so they cannot mask a missing report next month. A crash after a successful ping but before receipt removal may repeat the ping; notification delivery is best-effort, not exactly-once. Monitoring failures never replace the download/logging exit status. Keep notification state separate from future processing state; do not delete it merely because a CSV has been processed.
+
+Concurrent notification attempts use `data/monthly-reports/.arrival.lock/`; contention defers notification without failing the daily job. After an unclean termination, verify no service is active before removing a stale arrival lock. As with the download lock, do not remove active locks.
+
+Before operational rollout, independently verify SFTP access to `/monthly_report`, permission to create/list `/monthly_report/Processed/` and rename into it, the actual filename family, filename-reuse policy, a complete download and remote move/retry, and both Healthchecks.io checks in the deployment environment. Verify monthly scheduling/grace/timezone, an eligible arrival, a no-op day, and recovery from a failed arrival ping using designated test checks, not production checks during routine validation. Local mocked checks do not prove these live integrations.
+
+### Visualize monthly statistics
+
+Create a self-contained HTML dashboard from one or more local monthly reports:
+
+```bash
+./visualize-monthly-reports data/monthly-reports/*.csv
+# Open data/monthly-visualizations/index.html in a browser.
+```
+
+The output defaults to project-root `data/monthly-visualizations/index.html`, regardless of the working directory. Input arguments and `--output` paths are relative to the current directory. Choose another destination with `--output /path/to/report.html`. The destination is replaced atomically with owner-only permissions; inputs are never overwritten. Generated dashboards are ignored by Git. No `.env` is read, and no network requests, downloader receipt updates, or retention changes occur.
+
+The **Library / branch** pick list offers All branches, then selectable MCFL and San Rafael system entries with their individual branches indented beneath them; unassigned branches follow individually. Both system and branch selection are reflected in the URL, for example `index.html#system=mcfl` or the unchanged `index.html#branch=novato-library`. Opening a link restores the view; selector changes, branch comparison links, and browser Back/Forward navigation synchronize with the URL. Choosing a branch clears the system selection and vice versa; an explicit system parameter takes precedence if a hand-written URL contains both. A `report` fragment parameter preserves the selected report as well. Missing selection defaults to all branches/the latest included report; unknown IDs fall back with a visible notice. This works with local `file:` URLs and static hosting. A local link is usable by another staff member only if they can access the same HTML file; sharing the fragment alone does not share the file.
+
+Library membership is maintained in version-controlled `lib/monthly-library-groups.json`, loaded relative to the executable and embedded in each generated dashboard. Each system has a stable `id`, display `name`, and ordered `branches`; each branch has a display `name` and explicit, exact `sources` aliases (including its display name). Only approved aliases are matched—membership is never inferred from similar names. Existing source branch IDs remain unchanged. Duplicate system IDs, overlapping aliases, or multiple source labels matching one mapped branch fail before replacing output, rather than risking double-counting. Unrecognized source labels remain unassigned; add approved aliases explicitly. San Rafael's Northgate Library uses the exact source alias `San Rafael Northgate Library`; there is no Mall member or alias. Changing this file requires regenerating the dashboard. The same mapping applies to every included month; historical membership changes are not modeled.
+
+Library-system figures sum only member branches, counting each branch once; source-wide totals, repeated summaries, and unattributed signups are not added. Each metric sums its reported member values and shows coverage (for example, “Reported subtotal · 7 of 11 branches reported”); only full coverage is labeled “Member total.” Missing members/metrics are excluded, never converted to zero. If no member reports the metric, its count remains unknown. Counts and coverage appear together in headline summaries, monthly-value/detail tables, and chart accessibility text. Notice totals use each branch's reported total or complete hold/reminder/overdue components, keeping item counts separate. Unsafe integer sums also remain unknown. Mapped branches absent from the inputs stay selectable and show a No data notice with unknown counts; system-view notices name absent members. Partial subtotals are not complete library-system totals. Month-to-month system changes and connected chart lines require the identical set of reporting members for that metric in both adjacent months; matching coverage counts alone do not establish comparability. System views limit branch comparisons to their members. Keyword activity, source registration totals, and source percentages remain explicitly labeled all-branches context, not MCFL/San Rafael figures. The all-branches view continues to use source-reported totals.
+
+The report opens on **all branches** for the latest included month, with the month and branch together in a compact header. Its single-column layout uses a warm off-white background, navy text, restrained teal charts, and larger headline counts, with **registered patrons**, **new signups**, and **text notices** one after another. Each metric has its heading, selected-month count, prior-month change, and chart together; headline changes use conversational labels (such as “10 more than September 2026 (+14.1%)”) and neutral styling rather than good/bad colors. Tables align numeric columns to the right, and printing uses a plain white background. There are no summary cards, side-by-side metric columns, or forced full-screen sections.
+
+Changes use the immediately preceding calendar month when both values are reported. A zero prior count has no defined percentage change; absent months/metrics are not substituted with zero or the nearest earlier report.
+
+Line charts have labeled count axes starting at zero and visible point values for short series; lines never bridge a missing value or calendar month. All confirmed months remain visible, with the selected report's point outlined. On narrow screens, charts use compact geometry and larger labels, separate month/year lines, and fewer labels for longer timelines without dropping data points or exact table values. Branch or library-system selection focuses the first three metrics. Snapshot changes are not signup totals, confirmed month-end balances, or adoption rates.
+
+**Additional information follows below the three primary metrics**, grouped into Activity details, Branch comparisons, and Sources & interpretation, with keyboard-accessible jump controls that preserve the selected branch/report URL. It includes system-wide keyword counts/chart, exact monthly value/change tables, alphabetical branch detail with clickable names, notice breakdowns, overdue-item counts (including successful/failed renewals where reported), system registration totals, source percentages with unverified denominators, filenames, and warnings. Branch comparisons stack the three metrics under each branch in a wrapping three-column table instead of a wide, horizontally scrolling table; tables retain compact signed changes. Nothing is removed from the underlying data. Keyword counts remain explicitly system-wide, include test/administrative commands, and are not unique active users or necessarily engagement. Overall/system/branch views are printable; no progress-bar-style charts are used. Notice volume is not a performance ranking. The HTML embeds **all included months and branches**: selection is not access control. Review inputs for sensitive information and distribute dashboards only to the intended audience. No external chart libraries, fonts, analytics, or server are used.
+
+#### Reporting months and trends
+
+Activity months are assigned **automatically from Month_YYYY filename labels**, not generation timestamps. For example, `sb_report_August_2026_<identifier>_2026-11-10_16_02_39.csv` is August 2026 activity generated in November. Several files generated on the same day remain separate activity months and are sorted by those labels:
+
+```bash
+./visualize-monthly-reports data/monthly-reports/sb_report_*.csv
+```
+
+Full English month names are supported. Legacy filename inference and the `--previous-month`/`--named-periods` options have been removed; those options now return usage error 2. No month is inferred from a generation date. For a renamed input without a supported label, supply `--period YYYY-MM`; otherwise the script fails without replacing the existing output. This option also permits an explicit override for one input:
+
+```bash
+./visualize-monthly-reports --period 2026-10 --output /tmp/october-dashboard.html /path/to/report.csv
+```
+
+Supply only the authoritative report for each month; the script does not automatically choose between conflicting corrected versions. At least two assigned months are needed to draw a trend; primary counts remain visible when only one month is available. The report selector is hidden when only one report is included. `--period` requires exactly one file.
+
+#### Parsing and validation
+
+The parser understands branch sections, CSV-like rows (including quoted commas/escaped quotes), dot/equals section separators, prose and CSV reminder summaries, both branch-total/signup formats, prose/CSV registration totals, inline/CSV source percentages, and successful/failed renewal counts. It handles UTF-8 BOM and CRLF; quoted multiline fields are unsupported and fail with a diagnostic. Repeated reminder summaries are counted once, absent metrics remain **not reported** rather than zero, and registration-only branches are retained. A signup row without a branch is retained as unattributed and flagged; it is never assigned to an invented branch or added again to the source-reported system signup total. Item counts and message counts are never added together. No inferred renewal rates, language shares, or adoption rates are calculated.
+
+Source inconsistencies and unknown lines are reported as warnings in stderr and the dashboard; unknown text itself is not copied into diagnostics. Review warnings before relying on the output. Malformed recognized numeric/CSV rows, conflicting repeated metrics, and inputs without supported branch data fail before replacing an existing dashboard. Duplicate normalized reports for the same activity month are skipped; conflicting reports for that month fail so you can explicitly choose the correct source. All CLI inputs must have a labeled or explicitly assigned activity month; generation dates are never used for duplicate grouping.
+
+Exit status is 0 on success, 1 on input/output/format errors, and 2 on usage errors. A missing Node.js runtime prevents the executable from starting. This is a local visualization tool, not a monitored service or a new uploadable SQL report.
 
 ### Run the monitored generate-and-upload workflow
 
@@ -315,23 +430,26 @@ Useful to know:
 ./services/generate-and-upload --help
 ./archive-reports --help
 ./services/archive-reports --help
+./download-monthly-reports --help
+./services/download-monthly-reports --help
+./visualize-monthly-reports --help
 ./check --help
 ```
 
 ## Local validation and tests
 
-Install the local test dependencies with the operating-system package manager.
+Install the local test dependencies (Bats-core 1.5.0 or newer, ShellCheck, and Node.js 18 or newer) with the operating-system package manager.
 
 FreeBSD:
 
 ```bash
-sudo pkg install bats-core hs-ShellCheck
+sudo pkg install bats-core hs-ShellCheck node
 ```
 
 Ubuntu 24.04:
 
 ```bash
-sudo apt install bats shellcheck
+sudo apt install bats shellcheck nodejs
 ```
 
 Then run the canonical local check:
@@ -340,7 +458,7 @@ Then run the canonical local check:
 ./check
 ```
 
-`./check` runs Bash syntax checks, ShellCheck, and the Bats suite under `tests/`, including help smoke tests. Behavioral tests create isolated temporary project trees and use generated fixtures plus fake `psql`, `sftp`, `curl`, `date`, workflow commands, and logger executables. They do not read the project `.env`, inspect working CSV artifacts, contact external services, write to the real system log, or require secrets.
+`./check` runs Bash/JavaScript syntax checks, ShellCheck, the Bats suite under `tests/` (including help smoke tests), and `node --test tests/monthly-visualizations.test.cjs`. Behavioral tests create isolated temporary project trees and use generated fixtures plus fake `psql`, `sftp`, `curl`, `date`, workflow commands, and logger executables. Dashboard tests use synthetic reports, temporary input/output paths, and a small DOM/event harness for generated-template/SVG wiring, URL restoration, selection updates, and simulated Back/Forward navigation. They also cover report-format variants, explicit named periods, corrections, unattributed signups, zero-base percentage changes, gaps in timelines, exact library mappings, the hierarchical selector, system subtotals/coverage/missing members, reporting-member changes, Northgate source aliases, and system/branch navigation; they do not constitute a real-browser visual check. Tests do not read the project `.env`, inspect working CSV artifacts, contact external services, write to the real system log, or require secrets.
 
 The mocked `psql` tests validate report discovery, arguments, output-file handling, and failure behavior; they do not execute or prove the semantics of the production Sierra SQL. Live PostgreSQL/Sierra query, SFTP upload, and Healthchecks.io validation remain separate operational checks.
 
@@ -362,7 +480,7 @@ Each monitored cron workflow:
 
 1. selects its own `HEALTHCHECKS_*_URL` setting
 2. notifies Healthchecks.io that the workflow is starting
-3. runs its existing report or archive commands with the existing logger tags
+3. runs its report, archive, or monthly-download commands with their logger tags
 4. notifies Healthchecks.io whether the complete workflow succeeded or failed
 
 For generate/upload jobs, `upload` still runs only when `generate-reports` succeeds. Archive maintenance remains a later, separate job.
@@ -376,12 +494,15 @@ For generate/upload jobs, `upload` still runs only when `generate-reports` succe
 
 # Archive/prune later, after any generate/upload workflow that still needs active files in data/.
 30 18 * * * /opt/scripts/shoutbomb/services/archive-reports --healthcheck-url-env HEALTHCHECKS_ARCHIVE_URL --archive 2 --delete-archived 30
+
+# Poll daily; separate check URLs monitor daily polling and current-month arrivals.
+00 09 * * * /opt/scripts/shoutbomb/services/download-monthly-reports --healthcheck-url-env HEALTHCHECKS_MONTHLY_DOWNLOAD_URL --arrival-healthcheck-url-env HEALTHCHECKS_MONTHLY_ARRIVAL_URL
 ```
 
 Why it is structured this way:
 
 - **absolute path**: cron often runs with a minimal environment, so use the full path to each service
-- **service-managed logging**: the services preserve `pipefail` behavior and the existing `shoutbomb-generate-reports`, `shoutbomb-upload`, and `shoutbomb-archive-reports` logger tags
+- **service-managed logging**: services preserve `pipefail` behavior and existing logger tags; monthly polling adds `shoutbomb-download-monthly-reports`
 - **separate checks**: each independently scheduled workflow selects its own Healthchecks.io URL without placing that URL on the command line
 - **separate report lists**: generation-only reports such as `loanrules` can be omitted explicitly from the upload list without duplicating `upload`'s supported-report mapping
 - **success gating**: the generate/upload service preserves the existing behavior of skipping upload when generation returns non-zero
@@ -405,11 +526,12 @@ The cron examples use these `logger` tags:
 - `shoutbomb-generate-reports`
 - `shoutbomb-upload`
 - `shoutbomb-archive-reports`
+- `shoutbomb-download-monthly-reports`
 
 To search all shoutbomb-related syslog lines on systems that log to `/var/log/syslog`:
 
 ```bash
-sudo grep -E 'shoutbomb-(generate-reports|upload|archive-reports)' /var/log/syslog
+sudo grep -E 'shoutbomb-(generate-reports|upload|archive-reports|download-monthly-reports)' /var/log/syslog
 ```
 
 To search only upload logs:
@@ -429,7 +551,7 @@ If your system uses a different file such as `/var/log/messages`, substitute tha
 ### Follow logs live
 
 ```bash
-sudo tail -F /var/log/syslog | grep --line-buffered -E 'shoutbomb-(generate-reports|upload|archive-reports)'
+sudo tail -F /var/log/syslog | grep --line-buffered -E 'shoutbomb-(generate-reports|upload|archive-reports|download-monthly-reports)'
 ```
 
 ### Use journalctl on journald systems
@@ -441,6 +563,7 @@ sudo journalctl \
   -t shoutbomb-generate-reports \
   -t shoutbomb-upload \
   -t shoutbomb-archive-reports \
+  -t shoutbomb-download-monthly-reports \
   --since today
 ```
 
@@ -452,7 +575,7 @@ If something is not working, check these first:
 - the variable named by `--healthcheck-url-env` exists, is non-empty, and matches `HEALTHCHECKS_*_URL`
 - each scheduled workflow selects its own Healthchecks.io variable
 - required PostgreSQL variables are set for `./generate-reports`
-- required SSH variables are set for `./upload`
+- required SSH variables are set for `./upload` and `./download-monthly-reports`
 - `SSH_IDENTITY_FILE` points to an absolute, readable path
 - `SSH_KNOWN_HOSTS_FILE`, if set, is also an absolute, readable path
 - `psql` is installed and on `PATH`
@@ -461,6 +584,9 @@ If something is not working, check these first:
 - `/usr/bin/logger` exists for monitored service logging
 - the latest expected CSV actually exists in `data/`
 - remote upload directories already exist
+- SFTP `/monthly_report` exists and is readable for monthly downloads; the account can create/list its `Processed/` directory and rename downloaded sources into it
+- no stale `data/monthly-reports/.download.lock/` or `.arrival.lock/` remains after an unclean exit (verify no run/service is active before removing it)
+- monthly arrivals select a separate URL, use the intended system/`TZ` month, and have a matching calendar-month schedule/grace in monitoring
 - the host key is trusted, since strict host key checking is always enabled
 
 Quick local help commands:
@@ -471,6 +597,8 @@ Quick local help commands:
 ./services/generate-and-upload --help
 ./archive-reports --help
 ./services/archive-reports --help
+./download-monthly-reports --help
+./services/download-monthly-reports --help
 ```
 
 ## Changelog and releases
@@ -485,4 +613,4 @@ rather than release-history records.
 - If you change `sql/overdue.sql` or `sql/renew.sql`, read `notes/hold-count-aggregation-issue.md` first.
 - Files in `data/` are generated artifacts, not source-of-truth logic.
 - Real query validation requires access to the PostgreSQL/Sierra environment.
-- Real upload validation requires working SSH/SFTP credentials and host key setup.
+- Real upload/download validation requires working SSH/SFTP credentials and host key setup.

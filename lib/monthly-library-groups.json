@@ -1,0 +1,29 @@
+[
+  {
+    "id": "mcfl",
+    "name": "MCFL",
+    "description": "Marin County Free Library",
+    "branches": [
+      { "name": "Bolinas", "sources": ["Bolinas"] },
+      { "name": "Civic Center", "sources": ["Civic Center", "Civic Center Library"] },
+      { "name": "Corte Madera", "sources": ["Corte Madera", "Corte Madera Library"] },
+      { "name": "Fairfax", "sources": ["Fairfax", "Fairfax Library"] },
+      { "name": "Inverness", "sources": ["Inverness", "Inverness Library"] },
+      { "name": "Marin City", "sources": ["Marin City", "Marin City Library"] },
+      { "name": "Novato", "sources": ["Novato", "Novato Library"] },
+      { "name": "Point Reyes", "sources": ["Point Reyes"] },
+      { "name": "South Novato", "sources": ["South Novato", "South Novato Library"] },
+      { "name": "Stinson Beach", "sources": ["Stinson Beach"] },
+      { "name": "Bookmobile", "sources": ["Bookmobile"] }
+    ]
+  },
+  {
+    "id": "san-rafael",
+    "name": "San Rafael",
+    "branches": [
+      { "name": "San Rafael Downtown", "sources": ["San Rafael Downtown", "San Rafael Downtown Library"] },
+      { "name": "Pickleweed", "sources": ["Pickleweed", "San Rafael Pickleweed Library"] },
+      { "name": "Northgate Library", "sources": ["Northgate Library", "San Rafael Northgate Library"] }
+    ]
+  }
+]
